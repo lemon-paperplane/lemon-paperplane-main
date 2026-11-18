@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -79,6 +80,7 @@ func (s *Server) Serve() error {
 	mux.HandleFunc("/api/v1/ops", s.handleOps)
 	mux.HandleFunc("/api/v1/events", s.handleEvents)
 	mux.HandleFunc("/api/v1/consoles/", s.handleConsole)
+	mux.HandleFunc("/api/v1/terminals/", s.handleTerminal)
 	mux.HandleFunc("/api/v1/plugins/", s.handlePluginFile)
 	mux.HandleFunc("/plugins/", s.handlePluginFile)
 	mux.HandleFunc("/mcp", s.handleMCP)
@@ -325,6 +327,90 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, "event: end\ndata: {}\n\n")
 			f.Flush()
 			return
+		}
+	}
+}
+
+// handleTerminal 推送终端输出：GET /api/v1/terminals/<id>/stream?since=<字节偏移>。
+// 先发缓冲里 since 之后还留着的输出，再实时推送。每条 data: {"o":起始偏移,"d":base64 原始字节}；
+// event: state 是终端状态（退出、重新启动）；event: closed 表示终端已关闭。连接断开后带上已收到的末尾偏移重连即可。
+func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/v1/terminals/")
+	id, tail, _ := strings.Cut(rest, "/")
+	if tail != "stream" {
+		writeErr(w, 404, "not_found", "not found")
+		return
+	}
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	backlog, start, info, ch, cancel, err := s.E.TerminalSubscribe(id, since)
+	if err != nil {
+		writeErr(w, 404, "not_found", "terminal not found")
+		return
+	}
+	defer cancel()
+	f, ok := sseHeaders(w)
+	if !ok {
+		return
+	}
+	sendState := func(t model.Terminal) {
+		b, _ := json.Marshal(t)
+		fmt.Fprintf(w, "event: state\ndata: %s\n\n", b)
+	}
+	sendData := func(off int64, d []byte) {
+		for len(d) > 0 {
+			n := len(d)
+			if n > 64<<10 {
+				n = 64 << 10
+			}
+			fmt.Fprintf(w, "data: {\"o\":%d,\"d\":\"%s\"}\n\n", off, base64.StdEncoding.EncodeToString(d[:n]))
+			off += int64(n)
+			d = d[n:]
+		}
+	}
+	sendState(info)
+	sendData(start, backlog)
+	f.Flush()
+	ping := time.NewTicker(15 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ping.C:
+			fmt.Fprint(w, ": ping\n\n")
+			f.Flush()
+		case c, ok := <-ch:
+			if !ok {
+				if !s.E.TerminalExists(id) {
+					fmt.Fprint(w, "event: closed\ndata: {}\n\n")
+					f.Flush()
+				}
+				return
+			}
+			// 把已经到的输出合并成一次发送，大量输出时少刷几次
+			for {
+				if c.Info != nil {
+					sendState(*c.Info)
+				} else {
+					sendData(c.Off, c.Data)
+				}
+				select {
+				case c, ok = <-ch:
+					if ok {
+						continue
+					}
+				default:
+				}
+				break
+			}
+			f.Flush()
+			if !ok {
+				if !s.E.TerminalExists(id) {
+					fmt.Fprint(w, "event: closed\ndata: {}\n\n")
+					f.Flush()
+				}
+				return
+			}
 		}
 	}
 }

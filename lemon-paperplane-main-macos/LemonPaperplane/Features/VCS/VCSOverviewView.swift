@@ -32,6 +32,8 @@ struct VCSWorkspaceSwitcher<Projects: View>: View {
                 VCSOverviewPage(workspaceId: workspaceId)
             } else if mode == "launch" {
                 LaunchBoardPage(workspaceId: workspaceId)
+            } else if mode == "terminal" {
+                TerminalPage(workspaceId: workspaceId)
             } else {
                 projects()
             }
@@ -39,13 +41,14 @@ struct VCSWorkspaceSwitcher<Projects: View>: View {
     }
 }
 
-/// 分段控件：工程 | 启动（带运行中的启动项数）| 版本控制（带有改动的仓库数）
+/// 分段控件：启动（带运行中的启动项数）| 工程 | 版本控制（带有改动的仓库数）| 终端（带终端个数）
 private struct VCSWorkspaceModePicker: View {
     let workspaceId: String
     @Binding var mode: String
     @ObservedObject private var model: VCSOverviewModel
     @ObservedObject private var data = AppModel.shared.data
     @ObservedObject private var runs = AppModel.shared.runs
+    @ObservedObject private var terminals = AppModel.shared.terminals
     @Environment(\.theme) private var theme
 
     init(workspaceId: String, mode: Binding<String>) {
@@ -65,16 +68,17 @@ private struct VCSWorkspaceModePicker: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            segment("projects", tr("vcs.overview.modeProjects"), icon: "layout-grid", count: 0)
             segment("launch", tr("launch.mode"), icon: "rocket",
                     count: LaunchGroupData.activeCount(workspaceId: workspaceId, data: data, runs: runs), tone: "success")
+            segment("projects", tr("vcs.overview.modeProjects"), icon: "layout-grid", count: 0)
             segment("vcs", tr("vcs.overview.modeVCS"), icon: "git-branch", count: changedCount)
+            segment("terminal", tr("terminal.mode"), icon: "square-terminal", count: terminals.terminals(in: workspaceId).count, tone: nil)
         }
         .padding(2)
         .background(RoundedRectangle(cornerRadius: M.radiusMD).fill(theme.neutralSubtle))
     }
 
-    private func segment(_ value: String, _ title: String, icon: String, count: Int, tone: String = "info") -> some View {
+    private func segment(_ value: String, _ title: String, icon: String, count: Int, tone: String? = "info") -> some View {
         let on = mode == value
         return Button { mode = value } label: {
             HStack(spacing: M.sm) {

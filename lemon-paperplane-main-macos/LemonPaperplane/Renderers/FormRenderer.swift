@@ -90,7 +90,7 @@ private struct FieldRow: View {
     let labelWidth: CGFloat
     @Environment(\.theme) private var theme
 
-    private var tall: Bool { ["text", "keyvalue", "list", "multiselect"].contains(field.type) }
+    private var tall: Bool { ["text", "code", "keyvalue", "list", "multiselect"].contains(field.type) }
 
     var body: some View {
         if field.type == "boolean" {
@@ -120,6 +120,8 @@ private struct FieldRow: View {
         switch field.type {
         case "text":
             PPTextArea(text: stringBinding, placeholder: field.placeholder ?? "")
+        case "code":
+            PPCodeInput(text: stringBinding, language: field.language ?? "shell", placeholder: field.placeholder ?? "", invalid: invalid)
         case "number":
             PPNumberField(placeholder: field.placeholder ?? "", value: numberBinding)
         case "select":

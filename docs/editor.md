@@ -81,3 +81,14 @@
   - `{type: "reveal", path}`（在访达/资源管理器中显示）
   - `{type: "openExternal", url}`
 - 编辑器网页源码：`lemon-paperplane-main/lemon-paperplane-main-editor/`（TypeScript + esbuild），构建产物 `dist/` 由打包脚本放进 App 资源（Mac：`Contents/Resources/editor`），内核从 `<可执行文件>/../Resources/editor` 或环境变量 `PAPERPLANE_EDITOR_DIR` 读取。
+
+## 终端页
+
+`/editor/terminal.html#token=…&theme=dark|light`：原生界面「终端」分段里的终端区域（xterm.js 6 + fit / web-links / unicode11 / webgl 插件）。一个网页装下一个工作区的全部终端，同一时间显示一个；离开分段时宿主释放网页，终端本身在内核里继续跑。
+
+- 宿主 → 网页（`window.paperplaneTerm`）：`show(id)` 显示（必要时创建）终端并聚焦；`sync(ids)` 关掉不在列表里的；`setTheme("light"|"dark")`；`focus()`；`size()` 返回当前区域能放下的 `{cols, rows}`（新建终端时按它启动 shell）。
+- 网页 → 宿主（`messageHandlers.paperplane`）：`{type:"ready"}`、`{type:"closed", id}`（终端已在内核关闭）、`{type:"title", id, title}`（OSC 标题）、`{type:"openExternal", url}`（⌘ 点击链接）、`{type:"focus", value}`。
+- 输出：只给正在显示的终端连 `GET /api/v1/terminals/<id>/stream`（WebKit 对同一主机最多 6 个连接），按已写入的字节偏移续传；断开后先用 `terminal.list` 确认终端还在再重连。
+- 输入：`terminal.input` 一个一个按顺序发，前一个没回来时后面的合并，保证按键顺序。尺寸变化 60ms 防抖后发 `terminal.resize`；字体没测好时算出的过小行列（少于 10 列或 3 行）不发，避免 shell 按两三列重画提示符。
+- macOS 快捷键与系统终端一致：⌘K 清屏，⌘←/→ 行首行尾，⌥←/→ 按词移动，⌘⌫ 删到行首，⌥⌫ 删词。配色来自设计变量的 console 与 ansi 色板。
+

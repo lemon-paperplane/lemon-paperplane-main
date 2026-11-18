@@ -22,6 +22,7 @@ final class AppModel: ObservableObject {
 
     let data = DataStore()
     let runs = RunStore()
+    let terminals = TerminalStore()
     let nav = NavStore()
     let dialogs = DialogStore()
     let toasts = ToastStore()
@@ -119,6 +120,7 @@ final class AppModel: ObservableObject {
         async let kinds = try? api.toolchainKinds()
         async let tcs = try? api.toolchains()
         async let prompts = try? api.pendingPrompts()
+        async let terms = try? api.terminalList()
 
         if let ws = await ws { data.applyWorkspaces(ws) }
         if let ps = await ps { data.projects = Dictionary(ps.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
@@ -130,6 +132,7 @@ final class AppModel: ObservableObject {
         if let k = await kinds { data.toolchainKinds = k }
         if let t = await tcs { data.toolchains = t }
         if let prompts = await prompts { for p in prompts { PromptPresenter.present(p) } }
+        if let terms = await terms { terminals.list = terms }
         data.loaded = true
         fixNavigation()
     }
@@ -227,6 +230,8 @@ final class AppModel: ObservableObject {
             if let v = try? e.decode(VCSChangedEvent.self) { bus.vcsChanged.send(v) }
         case EventType.stats:
             if let briefs = try? e.decode([RunBrief].self) { applyStats(briefs) }
+        case EventType.terminals:
+            if let list = try? e.decode([TerminalInfo].self) { terminals.list = list }
         default:
             break
         }

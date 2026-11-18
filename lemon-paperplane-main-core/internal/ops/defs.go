@@ -419,6 +419,39 @@ func (r *Registry) registerAll() {
 			ids, err := e.LaunchRemove(in.ProjectID, in.ConfigIDs)
 			return map[string]any{"launch": nonNilStrings(ids)}, err
 		})
+	def(r, "launch.addFile", "Add script to launch board", "Add a script or executable file of a project to the launch board: creates a 'Script / Executable' run configuration for it (reused if one already exists for the same file). The interpreter is chosen automatically (#! line, execute permission, or file extension).", "",
+		func(ctx context.Context, in *struct {
+			ProjectID string `json:"projectId" required:"true"`
+			Path      string `json:"path" required:"true" desc:"file path relative to the project root"`
+		}) (any, error) {
+			return e.LaunchAddFile(in.ProjectID, in.Path)
+		})
+	def(r, "launch.candidates", "List runnable files", "List files of a project that can be run as launch items: scripts (shell extensions or a #! line) and executables (execute permission plus a real executable format). With includeSources, also other source files such as .py/.js without #!. Documents, data and images are never listed, even with execute permission.", "r",
+		func(ctx context.Context, in *struct {
+			ProjectID      string `json:"projectId" required:"true"`
+			IncludeSources bool   `json:"includeSources"`
+			Limit          int    `json:"limit" desc:"max files, default 2000"`
+		}) (any, error) {
+			return e.LaunchCandidates(in.ProjectID, in.IncludeSources, in.Limit)
+		})
+	def(r, "launch.addCommand", "Add command to launch board", "Add a custom shell command (may span several lines) to the launch board: creates a 'Custom Command' run configuration that runs it in the user's default shell.", "",
+		func(ctx context.Context, in *struct {
+			ProjectID string `json:"projectId" required:"true"`
+			Name      string `json:"name" desc:"display name; defaults to the first line of the command"`
+			Command   string `json:"command" required:"true"`
+			Cwd       string `json:"cwd" desc:"working directory, relative to the project root or absolute; empty for the project root"`
+			Shell     string `json:"shell" desc:"auto (default shell), zsh, bash, sh, pwsh or cmd"`
+		}) (any, error) {
+			return e.LaunchAddCommand(in.ProjectID, in.Name, in.Command, in.Cwd, in.Shell)
+		})
+	def(r, "launch.setAlias", "Set launch item alias", "Give a launch-board item a display name (only shown on the launch board; the run configuration keeps its own name). An empty alias clears it.", "",
+		func(ctx context.Context, in *struct {
+			ProjectID string `json:"projectId" required:"true"`
+			ConfigID  string `json:"configId" required:"true"`
+			Alias     string `json:"alias"`
+		}) (any, error) {
+			return nil, e.LaunchSetAlias(in.ProjectID, in.ConfigID, in.Alias)
+		})
 	def(r, "launch.run", "Run launch board", "Start every launch-board item that is not running yet, optionally limited to a workspace, a project or some configIds. Returns the started runs and per-item errors.", "",
 		func(ctx context.Context, in *struct {
 			WorkspaceID string   `json:"workspaceId"`
@@ -434,6 +467,65 @@ func (r *Registry) registerAll() {
 			ConfigIDs   []string `json:"configIds"`
 		}) (any, error) {
 			return e.LaunchStop(in.WorkspaceID, in.ProjectID, in.ConfigIDs), nil
+		})
+	def(r, "terminal.list", "List terminals", "Interactive terminals (login shells in a pseudo terminal) kept by the daemon, in creation order. Filter by workspaceId. Output streams from GET /api/v1/terminals/<id>/stream?since=<offset>.", "r",
+		func(ctx context.Context, in *struct {
+			WorkspaceID string `json:"workspaceId"`
+		}) (any, error) {
+			return e.TerminalList(in.WorkspaceID), nil
+		})
+	def(r, "terminal.create", "Create terminal", "Open a new terminal. With projectId it starts in the project's root directory (or cwd relative to it), joins the project's workspace and is named after the project; the project's environment variables apply. Returns the terminal.", "",
+		func(ctx context.Context, in *engine.TerminalCreateParams) (any, error) {
+			return e.TerminalCreate(*in)
+		})
+	def(r, "terminal.input", "Type into terminal", "Send keystrokes or text to a terminal, exactly as typed (use \\r for Enter, \\u0003 for Ctrl-C).", "",
+		func(ctx context.Context, in *struct {
+			ID   string `json:"id" required:"true"`
+			Data string `json:"data" required:"true"`
+		}) (any, error) {
+			return nil, e.TerminalInput(in.ID, in.Data)
+		})
+	def(r, "terminal.read", "Read terminal", "Recent output of a terminal as plain text (colors and cursor movement removed). maxBytes defaults to 16384.", "r",
+		func(ctx context.Context, in *struct {
+			ID       string `json:"id" required:"true"`
+			MaxBytes int    `json:"maxBytes"`
+		}) (any, error) {
+			text, err := e.TerminalRead(in.ID, in.MaxBytes)
+			return map[string]any{"text": text}, err
+		})
+	def(r, "terminal.resize", "Resize terminal", "Set the terminal size in columns and rows.", "i",
+		func(ctx context.Context, in *struct {
+			ID   string `json:"id" required:"true"`
+			Cols int    `json:"cols" required:"true"`
+			Rows int    `json:"rows" required:"true"`
+		}) (any, error) {
+			return nil, e.TerminalResize(in.ID, in.Cols, in.Rows)
+		})
+	def(r, "terminal.rename", "Rename terminal", "Rename a terminal.", "",
+		func(ctx context.Context, in *struct {
+			ID   string `json:"id" required:"true"`
+			Name string `json:"name" required:"true"`
+		}) (any, error) {
+			return nil, e.TerminalRename(in.ID, in.Name)
+		})
+	def(r, "terminal.restart", "Restart terminal", "Start the shell again in a terminal whose process has exited (same directory; output continues below).", "",
+		func(ctx context.Context, in *struct {
+			ID string `json:"id" required:"true"`
+		}) (any, error) {
+			return e.TerminalRestart(in.ID)
+		})
+	def(r, "terminal.busy", "Terminal busy", "Whether a command is running in the foreground of a terminal (not the shell waiting for input), and its name. Check before closing.", "r",
+		func(ctx context.Context, in *struct {
+			ID string `json:"id" required:"true"`
+		}) (any, error) {
+			busy, name, err := e.TerminalBusy(in.ID)
+			return map[string]any{"busy": busy, "process": name}, err
+		})
+	def(r, "terminal.close", "Close terminal", "Close a terminal: hang up its shell and everything started from it.", "d",
+		func(ctx context.Context, in *struct {
+			ID string `json:"id" required:"true"`
+		}) (any, error) {
+			return nil, e.TerminalClose(in.ID)
 		})
 	def(r, "run.list", "List runs", "List runs (active and recently finished) with state, URLs, ports, CPU/memory and diagnoses.", "r",
 		func(ctx context.Context, in *struct {

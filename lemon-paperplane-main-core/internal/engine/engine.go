@@ -79,6 +79,8 @@ type Engine struct {
 	prompts   map[string]*promptState
 	vcsBrief  map[string]*model.VCSBrief
 	busy      map[string]string // projectId → 当前任务标题
+	terms     map[string]*termState
+	termOrder []string
 
 	tcMu    sync.Mutex
 	tcCache map[string][]sdk.Toolchain
@@ -175,6 +177,7 @@ func (e *Engine) Close(stopRuns bool) {
 	default:
 		close(e.stopCh)
 	}
+	e.closeAllTerminals()
 	e.Plugins.Shutdown()
 	e.saveActivePIDs()
 }

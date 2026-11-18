@@ -139,13 +139,18 @@ type RunConfigTypeDef struct {
 	Icon    string      `json:"icon,omitempty"`
 	Facets  []string    `json:"facets,omitempty"` // 模块带这些 facet 才能新建此类配置
 	Options []FormField `json:"options,omitempty"`
+	// AnyModule：任何模块（包括没识别出技术的工程根目录）都能新建此类配置，不要求插件参与该模块的识别分析
+	// （如「脚本与可执行文件」）。这样的插件可以不声明 activation，平时不会因为分析而被拉起。
+	AnyModule bool `json:"anyModule,omitempty"`
 }
 
 // FormField 是声明式表单字段，三端界面通用渲染，插件不写界面代码。
 type FormField struct {
-	Key         string   `json:"key"`
-	Title       string   `json:"title"`
-	Type        string   `json:"type"` // string | password | text | boolean | number | select | multiselect | keyvalue | path | list
+	Key   string `json:"key"`
+	Title string `json:"title"`
+	Type  string `json:"type"` // string | password | text | code | boolean | number | select | multiselect | keyvalue | path | list
+	// Language 是 type=code 时代码输入框的语言（如 shell），界面用 CodeMirror 着色
+	Language    string   `json:"language,omitempty"`
 	Default     any      `json:"default,omitempty"`
 	Options     []Option `json:"options,omitempty"`
 	OptionsFrom string   `json:"optionsFrom,omitempty"` // 动态选项，取 AnalyzeResult.OptionValues[OptionsFrom]

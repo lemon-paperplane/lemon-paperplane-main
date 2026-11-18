@@ -45,6 +45,9 @@ type FSEntry struct {
 	Symlink bool   `json:"symlink,omitempty"`
 	Hidden  bool   `json:"hidden,omitempty"`
 	Ignored bool   `json:"ignored,omitempty"`
+	Exec    bool   `json:"exec,omitempty"` // 普通文件且有执行权限（Windows 上恒为 false）
+	// Runnable 能否作为启动项运行：script | binary | source | ""（见 runnable.go）
+	Runnable string `json:"runnable,omitempty"`
 }
 
 // FSList 是 fs.list 的返回。
@@ -179,6 +182,12 @@ func (e *Engine) FSListDir(projectID, rel string) (*FSList, error) {
 			continue
 		}
 		fe := FSEntry{Name: name, Path: relOf(root, full), Dir: info.IsDir(), Size: info.Size(), MTime: mtimeString(info.ModTime()), Symlink: isLink, Hidden: strings.HasPrefix(name, ".")}
+		if !fe.Dir && runtime.GOOS != "windows" && info.Mode().Perm()&0o111 != 0 {
+			fe.Exec = true
+		}
+		if !fe.Dir {
+			fe.Runnable = runnableKind(full, info)
+		}
 		if fe.Dir && sdk.IsGeneratedDir(abs, name) {
 			fe.Ignored = true
 		}

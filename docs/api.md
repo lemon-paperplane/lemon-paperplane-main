@@ -31,6 +31,7 @@ Content-Type: application/json
 ## 3. 事件流（SSE）
 
 - `GET /api/v1/events`：`text/event-stream`，每条 `data: {"type": "...", "data": ...}`。类型见 `model.go` 的 `Ev*` 常量。连上后先收到一条 `hello`（data 为 SystemInfo）。每 15 秒一条 `: ping` 注释。
+- `GET /api/v1/terminals/<terminalId>/stream?since=<字节偏移>`：交互终端的输出流。先发 `event: state`（Terminal），再补发缓冲里偏移 `since` 之后还留着的输出（每个终端保留最后 1 MB），之后实时推送。每条 `data: {"o": 起始偏移, "d": base64 原始字节}`（字节流，UTF-8 可能跨条切开，按字节写进终端模拟器）；终端退出或重新启动时发 `event: state`；终端关闭时发 `event: closed`。连接断开（跟不上会被断开）后带上已收到的末尾偏移重连即可续上。
 - `GET /api/v1/consoles/<consoleId>/stream?since=<seq>`：某个运行（consoleId = runId）或任务（taskId）的日志流。先补发 `seq > since` 的缓冲行，再实时推送。每条 `data: {"lines": [LogLine...]}`（批量，最多 100ms 合并一次）。控制台结束后发 `event: end`。
 
 ## 4. 图标引用
@@ -127,8 +128,29 @@ Content-Type: application/json
 | `launch.list` | `{workspaceId 可选, projectId 可选}` | `[{projectId, projectName, path, items: [{configId, name, type, plugin, moduleId, moduleName, run: RunBrief}]}]`（run 为最近一次，进行中优先） |
 | `launch.add` | `{projectId, configIds}` | `{launch: [configId]}`（已在里面的忽略；配置不存在报 not_found） |
 | `launch.remove` | `{projectId, configIds}` | `{launch: [configId]}` |
+| `launch.addFile` | `{projectId, path}`（相对工程根） | `{configId, moduleId, name, created, launch}`：为脚本/可执行文件建「脚本 / 可执行文件」运行配置（同一文件已有就复用）并加入启动；文件不在任何模块里时放进工程根目录的普通模块 |
+| `launch.addCommand` | `{projectId, name 可选, command, cwd 可选, shell 可选}` | 同上：建「自定义命令」运行配置（可多行，用默认 shell 执行）并加入启动；cwd 工程内存相对路径，工程外存绝对路径 |
+| `runconfig.options` | `{projectId, moduleId, keys}` | `{key: [Option]}`：实时取 live 下拉选项（如 ios.devices / android.devices），界面打开运行配置期间每 4 秒刷新 |
 | `launch.run` | `{workspaceId 可选, projectId 可选, configIds 可选}` | `{started: [Run], skipped, errors: [{projectId, configId, error}]}`（已在运行的跳过） |
 | `launch.stop` | `{workspaceId 可选, projectId 可选, configIds 可选}` | `{stopped, errors}` |
+
+`launch.setAlias` `{projectId, configId, alias}`：给启动项起别名（只在「启动」里显示，运行配置本身的名字不变；空字符串清除，最长 80 字）。别名在 `ProjectSummary.launchAlias`（configId → 别名）；移出启动时一并删除。
+
+### 终端
+
+工作区「终端」页：像 VS Code 一样开若干个交互终端。每个终端是伪终端里的登录 shell（`$SHELL -l`，读用户的 .zprofile/.zshrc），起始目录是所选工程的根目录，带上工程环境变量与镜像变量，`TERM=xterm-256color`。终端只在 daemon 内存里：界面关掉再开还在，daemon 退出时全部挂断。shell 以退出码 0 结束（输入 exit）时终端自动关闭；非 0 时保留并标记已退出，可以重新启动。变化时推 `terminals.changed`（data 为全部终端）。暂不支持 Windows。
+
+| 操作 | 输入 | 输出 |
+|---|---|---|
+| `terminal.list` | `{workspaceId 可选}` | `[Terminal]`：`{id, workspaceId, projectId, name, cwd, shell, pid, cols, rows, startedAt, exited, exitCode, output}`（output 为累计输出字节数） |
+| `terminal.create` | `{projectId 或 workspaceId+cwd, cwd 可选（相对工程根）, name 可选, cols, rows}` | `Terminal`（名字默认工程名，同工作区重名加序号） |
+| `terminal.input` | `{id, data}` | –（原样写入，回车用 `\r`，Ctrl-C 用 `\u0003`） |
+| `terminal.read` | `{id, maxBytes 可选=16384}` | `{text}`：最近输出的纯文本（去掉颜色、光标控制，按回车还原行），给 AI / 命令行看 |
+| `terminal.resize` | `{id, cols, rows}` | – |
+| `terminal.rename` | `{id, name}` | – |
+| `terminal.restart` | `{id}` | `Terminal`（已退出的终端在原目录重新启动，输出接在后面） |
+| `terminal.busy` | `{id}` | `{busy, process}`：是否有命令在前台运行（不是 shell 在等输入）及其名字，关闭前确认用 |
+| `terminal.close` | `{id}` | –（给 shell 所在进程组发 SIGHUP，2 秒后还在就强制结束） |
 
 ### 任务
 

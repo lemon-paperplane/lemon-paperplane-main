@@ -167,6 +167,8 @@ public struct ProjectSummary: Codable, Hashable, Identifiable {
     public var defaultConfigId: String?
     /// 加到工作区「启动」面板的运行配置 id（按加入顺序，只含仍存在的）
     @DefArray public var launch: [String]
+    /// 启动项别名（运行配置 id → 别名），只在「启动」里显示
+    @DefDict public var launchAlias: [String: String]
     public var vcs: VCSBrief?
     @DefInt public var problems: Int
     public var problemSeverity: String?
@@ -539,6 +541,7 @@ public enum EventType {
     public static let promptDone = "prompt.done"
     public static let vcs = "vcs.changed"
     public static let stats = "stats"
+    public static let terminals = "terminals.changed"
 }
 
 /// 一条事件，data 先保留为 JSONValue，由使用方按 type 解码。
@@ -646,6 +649,38 @@ public struct MCPConfig: Codable, Hashable {
 
 public struct StopAllResult: Codable, Hashable { @DefInt public var stopped: Int }
 
+/// launch.candidates 的一项：工程里能作为启动项运行的文件
+public struct RunnableFile: Codable, Hashable, Identifiable {
+    public var path: String
+    /// script | binary | source
+    @DefString public var kind: String
+    @DefBool public var exec: Bool
+    @DefInt64 public var size: Int64
+    /// 已经在启动里
+    @DefBool public var launch: Bool
+    public var id: String { path }
+    public var name: String { (path as NSString).lastPathComponent }
+    /// 所在目录（相对工程根，根目录为空）
+    public var directory: String {
+        let d = (path as NSString).deletingLastPathComponent
+        return d == "." ? "" : d
+    }
+}
+
+public struct RunnableList: Codable, Hashable {
+    @DefArray public var files: [RunnableFile]
+    @DefBool public var truncated: Bool
+}
+
+/// launch.addFile / launch.addCommand 的结果
+public struct LaunchAddResult: Codable, Hashable {
+    @DefString public var configId: String
+    @DefString public var moduleId: String
+    @DefString public var name: String
+    @DefBool public var created: Bool
+    @DefArray public var launch: [String]
+}
+
 /// launch.add / launch.remove 的结果：该工程现在的启动项
 public struct LaunchIDs: Codable, Hashable { @DefArray public var launch: [String] }
 
@@ -663,6 +698,28 @@ public struct LaunchRunError: Codable, Hashable {
     @DefString public var error: String
 }
 public struct PathResult: Codable, Hashable { @DefString public var path: String }
+
+/// 交互终端（daemon 里伪终端中的登录 shell；terminal.* 接口与 terminals.changed 事件）
+public struct TerminalInfo: Codable, Hashable, Identifiable {
+    public var id: String
+    @DefString public var workspaceId: String
+    @DefString public var projectId: String
+    @DefString public var name: String
+    @DefString public var cwd: String
+    @DefString public var shell: String
+    @DefInt public var pid: Int
+    @DefInt public var cols: Int
+    @DefInt public var rows: Int
+    public var startedAt: Date?
+    @DefBool public var exited: Bool
+    @DefInt public var exitCode: Int
+    @DefInt public var output: Int
+}
+
+public struct TerminalBusy: Codable, Hashable {
+    @DefBool public var busy: Bool
+    @DefString public var process: String
+}
 public struct PortKillResult: Codable, Hashable { @DefArray public var pids: [Int] }
 
 /// 运行时文件 runtime.json

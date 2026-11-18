@@ -59,6 +59,10 @@
   "err.noExecutable": "paperplane executable not found",
   "err.pathOutside": "{0} is outside the project folder",
   "console.lineTruncated": "… ({0} more characters omitted from this long line; the log file has it in full)",
+  "err.dirMissing": "Folder not found: {0}",
+  "err.emptyCommand": "The command is empty",
+  "err.notAFile": "{0} is not a file",
+  "err.notRunnable": "{0} is not a script or executable and cannot be a launch item",
   "err.isDir": "{0} is a folder",
   "err.badEncoding": "Unsupported encoding: {0}",
   "err.exists": "{0} already exists",
@@ -67,5 +71,10 @@
   "err.unknownEncoding": "Unsupported encoding {0}",
   "err.encodeFailed": "The content cannot be saved as {0}",
   "err.deleteRoot": "The project root cannot be deleted",
-  "err.badRegex": "Invalid regular expression: {0}"
+  "err.badRegex": "Invalid regular expression: {0}",
+  "err.terminalUnsupported": "Terminals are not available on this system yet",
+  "err.terminalStart": "Could not start the terminal: {0}",
+  "err.terminalBusy": "The terminal is not reading input; try again later",
+  "err.emptyName": "Name cannot be empty",
+  "terminal.exited": "[Process exited with code {0}]"
 }

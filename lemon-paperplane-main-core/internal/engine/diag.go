@@ -142,10 +142,12 @@ func stageOK(stages []string, stage string) bool {
 	return false
 }
 
-func (e *Engine) runMatchers(p *model.Project, m *model.Module, stage string) *runMatchers {
+// runMatchers 收集生效的规则：参与该模块的插件，加上运行配置所属的插件（ownPlugin，可为空；
+// 如「脚本与可执行文件」不参与识别，但它的规则要对自己的运行生效）。
+func (e *Engine) runMatchers(p *model.Project, m *model.Module, stage, ownPlugin string) *runMatchers {
 	out := &runMatchers{}
 	for _, plug := range e.Plugins.Active() {
-		if !participates(plug, m) {
+		if !participates(plug, m) && plug.ID() != ownPlugin {
 			continue
 		}
 		cr := e.rulesOf(plug)

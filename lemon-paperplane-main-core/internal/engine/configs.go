@@ -43,11 +43,9 @@ func (e *Engine) RunConfigTypes(projectID, moduleID string) ([]RunConfigTypeChoi
 	}
 	var out []RunConfigTypeChoice
 	for _, plug := range e.Plugins.Active() {
-		if !participates(plug, m) {
-			continue
-		}
+		in := participates(plug, m)
 		for _, t := range plug.Manifest.Contributes.RunConfigurationTypes {
-			if !facetOK(t.Facets, m) {
+			if !(in || t.AnyModule) || !facetOK(t.Facets, m) {
 				continue
 			}
 			out = append(out, RunConfigTypeChoice{Type: model.RunConfigTypeInfo{RunConfigTypeDef: localizeRCType(plug, t), Plugin: plug.ID()}, OptionValues: opts})

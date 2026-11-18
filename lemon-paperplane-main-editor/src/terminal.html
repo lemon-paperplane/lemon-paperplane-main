@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-Hans" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lemon Paperplane</title>
+<!--CSS-->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--c-consoleBg); }
+  #host { position: absolute; inset: 6px 4px 2px 12px; }
+  .pp-term { position: absolute; inset: 0; visibility: hidden; }
+  .pp-term.on { visibility: visible; }
+  .pp-term .xterm { height: 100%; }
+  .pp-term .xterm-viewport { background: transparent !important; }
+  .pp-term .xterm .xterm-scrollable-element > .scrollbar > .slider { border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<!--JS-->
+</body>
+</html>

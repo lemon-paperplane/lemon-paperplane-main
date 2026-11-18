@@ -59,6 +59,10 @@
   "err.noExecutable": "找不到 paperplane 可执行文件",
   "err.pathOutside": "路径 {0} 不在工程目录内",
   "console.lineTruncated": "…（这一行太长，省略了 {0} 个字符，完整内容在日志文件里）",
+  "err.dirMissing": "目录不存在：{0}",
+  "err.emptyCommand": "命令不能为空",
+  "err.notAFile": "{0} 不是文件",
+  "err.notRunnable": "{0} 不是脚本或可执行程序，不能作为启动项",
   "err.isDir": "{0} 是文件夹",
   "err.badEncoding": "不支持的编码：{0}",
   "err.exists": "{0} 已存在",
@@ -67,5 +71,10 @@
   "err.unknownEncoding": "不支持的编码 {0}",
   "err.encodeFailed": "内容无法用 {0} 编码保存",
   "err.deleteRoot": "不能删除工程根目录",
-  "err.badRegex": "正则表达式有误：{0}"
+  "err.badRegex": "正则表达式有误：{0}",
+  "err.terminalUnsupported": "这个系统上还不能使用终端",
+  "err.terminalStart": "终端启动失败：{0}",
+  "err.terminalBusy": "终端没有在读取输入，稍后再试",
+  "err.emptyName": "名称不能为空",
+  "terminal.exited": "[进程已退出，代码 {0}]"
 }

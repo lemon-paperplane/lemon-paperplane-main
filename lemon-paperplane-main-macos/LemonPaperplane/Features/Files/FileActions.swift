@@ -83,6 +83,9 @@ enum FileActions {
         var e: [MenuEntry] = []
         if !entry.dir {
             e.append(.item(tr("files.edit"), icon: "file-pen") { edit(projectId: projectId, path: entry.path) })
+            if entry.isLaunchable {
+                e.append(.item(tr("launch.addFile"), icon: "rocket") { Actions.launchAddFile(projectId: projectId, path: entry.path) })
+            }
             e.append(.divider)
         }
         e += [

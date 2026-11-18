@@ -180,3 +180,24 @@ final class EventBus {
     /// 任何原始事件（调试或扩展用）
     let raw = PassthroughSubject<DaemonEvent, Never>()
 }
+
+/// 交互终端（terminals.changed 事件整体替换）。终端在 daemon 里，界面关掉再打开还在。
+@MainActor
+final class TerminalStore: ObservableObject {
+    @Published var list: [TerminalInfo] = []
+    /// 每个工作区当前显示的终端
+    @Published var selected: [String: String] = [:]
+
+    func terminals(in workspaceId: String) -> [TerminalInfo] { list.filter { $0.workspaceId == workspaceId } }
+
+    /// 工作区当前显示的终端：记住的那个还在就用它，否则第一个
+    func current(in workspaceId: String) -> TerminalInfo? {
+        let l = terminals(in: workspaceId)
+        if let id = selected[workspaceId], let t = l.first(where: { $0.id == id }) { return t }
+        return l.first
+    }
+
+    func upsert(_ t: TerminalInfo) {
+        if let i = list.firstIndex(where: { $0.id == t.id }) { list[i] = t } else { list.append(t) }
+    }
+}

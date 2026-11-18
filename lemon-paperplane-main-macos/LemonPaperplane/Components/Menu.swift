@@ -270,6 +270,34 @@ struct PPMenuButton<Label: View>: View {
     }
 }
 
+/// 外观和 PPButton 一样、点击弹出菜单的按钮（「新建终端」选工程等），标题后带下拉箭头
+struct PPButtonMenu: View {
+    let title: String
+    var icon: String?
+    var kind: PPButtonKind = .secondary
+    var size: PPButtonSize = .regular
+    var alignment: PopupAlignment = .leading
+    let entries: () -> [MenuEntry]
+    @State private var anchor = PopupAnchor()
+
+    var body: some View {
+        Button {
+            guard let rect = anchor.screenRect else { return }
+            if let p = anchor.panel { PopupController.shared.dismiss(p); return }
+            anchor.panel = MenuPresenter.show(entries(), anchorRect: rect, alignment: alignment,
+                                              parent: anchor.view?.window, onClose: { [anchor] in anchor.panel = nil })
+        } label: {
+            HStack(spacing: M.sm) {
+                if let icon { PPIcon(icon, size: size == .small ? M.iconSmall : M.icon) }
+                Text(title)
+                PPIcon("chevron-down", size: M.iconSmall).opacity(0.8)
+            }
+        }
+        .buttonStyle(PPButtonStyle(kind: kind, size: size))
+        .background(AnchorReader(anchor: anchor))
+    }
+}
+
 /// 右键菜单登记处：一个本地事件监视器，按点击位置找最内层（可见面积最小）的登记区域。
 @MainActor
 final class ContextMenuRegistry {
@@ -282,6 +310,13 @@ final class ContextMenuRegistry {
 
     private var items: [ObjectIdentifier: Entry] = [:]
     private var monitor: Any?
+    /// 鼠标当前所在的菜单区域（SwiftUI 的 onHover 判定，和界面上的悬停高亮一致）
+    private var hovered: Set<ObjectIdentifier> = []
+
+    /// 鼠标进入/离开某个右键菜单区域
+    func hover(_ anchor: PopupAnchor, _ inside: Bool) {
+        if inside { hovered.insert(ObjectIdentifier(anchor)) } else { hovered.remove(ObjectIdentifier(anchor)) }
+    }
 
     func register(_ anchor: PopupAnchor, entries: @escaping () -> [MenuEntry]) {
         items[ObjectIdentifier(anchor)] = Entry(anchor: anchor, entries: entries)
@@ -290,6 +325,7 @@ final class ContextMenuRegistry {
 
     func unregister(_ anchor: PopupAnchor) {
         items.removeValue(forKey: ObjectIdentifier(anchor))
+        hovered.remove(ObjectIdentifier(anchor))
     }
 
     private func installIfNeeded() {
@@ -304,8 +340,13 @@ final class ContextMenuRegistry {
 
     private func handle(_ e: NSEvent) -> Bool {
         items = items.filter { $0.value.anchor?.view != nil }
-        let hits = items.values.filter { $0.anchor?.visibleContains(e.locationInWindow, window: e.window) == true }
-        guard let best = hits.min(by: { ($0.anchor?.visibleArea ?? 0) < ($1.anchor?.visibleArea ?? 0) }) else { return false }
+        hovered = hovered.filter { items[$0] != nil }
+        let hits = items.filter { $0.value.anchor?.visibleContains(e.locationInWindow, window: e.window) == true }
+        // 只按几何位置找会有并列：懒加载列表里滚出去又复用的行可能残留旧位置，和鼠标下的行一样大，
+        // 曾经右键 deploy.sh 却弹出了 tsconfig.app.json 的菜单。优先取鼠标当前所在（SwiftUI 悬停判定）的区域。
+        let hoveredHits = hits.filter { hovered.contains($0.key) }
+        let pool = hoveredHits.isEmpty ? Array(hits.values) : Array(hoveredHits.values)
+        guard let best = pool.min(by: { ($0.anchor?.visibleArea ?? 0) < ($1.anchor?.visibleArea ?? 0) }) else { return false }
         PopupController.shared.dismissAll()
         MenuPresenter.showAtMouse(best.entries(), parent: e.window)
         return true
@@ -314,32 +355,44 @@ final class ContextMenuRegistry {
 
 /// 登记右键菜单的占位视图：每次 SwiftUI 更新时刷新闭包，移除时注销
 private struct ContextMenuAnchor: NSViewRepresentable {
+    let anchor: PopupAnchor
     let entries: () -> [MenuEntry]
-
-    final class Coordinator { let anchor = PopupAnchor() }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView {
         let v = PassThroughView()
-        context.coordinator.anchor.view = v
-        ContextMenuRegistry.shared.register(context.coordinator.anchor, entries: entries)
+        anchor.view = v
+        ContextMenuRegistry.shared.register(anchor, entries: entries)
         return v
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.anchor.view = nsView
-        ContextMenuRegistry.shared.register(context.coordinator.anchor, entries: entries)
+        anchor.view = nsView
+        ContextMenuRegistry.shared.register(anchor, entries: entries)
     }
 
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        ContextMenuRegistry.shared.unregister(coordinator.anchor)
+    func makeCoordinator() -> PopupAnchor { anchor }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: PopupAnchor) {
+        ContextMenuRegistry.shared.unregister(coordinator)
+    }
+}
+
+/// 右键菜单：占位视图登记区域 + onHover 记录鼠标是否在区域内（右键时以此为准）
+private struct ContextMenuModifier: ViewModifier {
+    let entries: () -> [MenuEntry]
+    @State private var anchor = PopupAnchor()
+
+    func body(content: Content) -> some View {
+        content
+            .background(ContextMenuAnchor(anchor: anchor, entries: entries))
+            .onHover { ContextMenuRegistry.shared.hover(anchor, $0) }
+            .onDisappear { ContextMenuRegistry.shared.hover(anchor, false) }
     }
 }
 
 extension View {
     /// 右键（或 Control+点击）弹出自绘菜单
     func ppContextMenu(_ entries: @escaping () -> [MenuEntry]) -> some View {
-        background(ContextMenuAnchor(entries: entries))
+        modifier(ContextMenuModifier(entries: entries))
     }
 }

@@ -14,8 +14,16 @@ public struct FSEntry: Codable, Hashable, Identifiable {
     @DefBool public var hidden: Bool
     /// node_modules / build / .venv 等：界面淡化显示，仍可展开
     @DefBool public var ignored: Bool
+    /// 普通文件且有执行权限（Windows 上恒为 false）
+    @DefBool public var exec: Bool = false
+    /// 能否作为启动项运行（内核判定）：script | binary | source；空表示不能（文档、数据、图片等）
+    public var runnable: String?
 
     public var id: String { path }
+
+    /// 文件树右键里提供「添加到启动」：脚本和可执行程序（和「添加脚本或程序」选择框的默认列表一致；
+    /// 没有 #! 的 .py/.js 等源码多是模块或配置文件，要加就在选择框里打开「也显示其他源码文件」）
+    public var isLaunchable: Bool { !dir && (runnable == "script" || runnable == "binary") }
 
     public init(name: String, path: String, dir: Bool, size: Int64 = 0, hidden: Bool = false, ignored: Bool = false) {
         self.name = name; self.path = path; self.dir = dir; self.size = size; self.hidden = hidden; self.ignored = ignored

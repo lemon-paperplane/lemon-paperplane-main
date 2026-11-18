@@ -211,6 +211,27 @@ func (e *Engine) refreshModules(ctx context.Context, p *model.Project) {
 		}
 		mods = append(mods, m)
 	}
+	// 这次没识别出来的目录：如果用户在里面建过运行配置（如加到「启动」的脚本、自定义命令），保留模块和这些配置，
+	// 去掉已失效的技术标签和插件生成的配置
+	detected := map[string]bool{}
+	for _, d := range dets {
+		detected[d.relDir] = true
+	}
+	for _, om := range p.Modules {
+		if detected[om.RelDir] {
+			continue
+		}
+		var keep []*model.RunConfig
+		for _, c := range om.RunConfigs {
+			if c.Source == "user" {
+				keep = append(keep, c)
+			}
+		}
+		if len(keep) > 0 {
+			mods = append(mods, &model.Module{ID: om.ID, Name: om.Name, RelDir: om.RelDir, RunConfigs: keep,
+				Models: map[string]json.RawMessage{}, Analysis: map[string]*model.ModuleAnalysis{}})
+		}
+	}
 	// 各模块并行分析（模块内按插件拓扑序）
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 4)

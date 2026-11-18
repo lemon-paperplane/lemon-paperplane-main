@@ -154,7 +154,7 @@ func (e *Engine) StartRun(projectID, configID string) (model.Run, error) {
 		r:      model.Run{ID: id, ProjectID: projectID, ModuleID: m.ID, ConfigID: cfg.ID, Name: cfg.Name, Plugin: cfg.Plugin, State: model.RunPreparing, StartedAt: time.Now(), LogFile: logFile},
 		cancel: cancel, console: c, exited: make(chan struct{}), diagSeen: map[string]bool{},
 	}
-	rs.matchers = e.runMatchers(p, m, "run")
+	rs.matchers = e.runMatchers(p, m, "run", cfg.Plugin)
 	c.OnLine(func(l model.LogLine) { e.onRunLine(rs, l) })
 	e.mu.Lock()
 	e.runs[id] = rs
@@ -781,7 +781,11 @@ func (e *Engine) diagnoseFailure(ctx context.Context, p *model.Project, m *model
 	if c == nil {
 		return
 	}
-	matchers := e.runMatchers(p, m, stage)
+	ownPlugin := ""
+	if cfg != nil {
+		ownPlugin = cfg.Plugin
+	}
+	matchers := e.runMatchers(p, m, stage, ownPlugin)
 	var diags []sdk.Diagnosis
 	seen := map[string]bool{}
 	var lines []string

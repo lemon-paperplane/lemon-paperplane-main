@@ -145,18 +145,25 @@ function* walk(dir) {
 // ---------------------------------------------------------------------------
 // 4. 打包
 function writeHtml(meta) {
+  writePage(meta, "src/main.ts", "index.html");
+  writePage(meta, "src/snippet.ts", "snippet.html");
+  writePage(meta, "src/terminal.ts", "terminal.html");
+}
+
+// 每个入口一张页面：入口 JS、它自己的 CSS（cssBundle）、首屏要预加载的共享块
+function writePage(meta, entry, page) {
   const outs = Object.entries(meta.outputs);
-  const js = outs.find(([, o]) => o.entryPoint === "src/main.ts")?.[0];
-  const css = outs.find(([f]) => f.endsWith(".css"))?.[0];
+  const js = outs.find(([, o]) => o.entryPoint === entry)?.[0];
+  const css = meta.outputs[js]?.cssBundle;
   const rel = (f) => path.relative(DIST, path.resolve(ROOT, f)).split(path.sep).join("/");
-  let html = fs.readFileSync(path.join(SRC, "index.html"), "utf8");
+  let html = fs.readFileSync(path.join(SRC, page), "utf8");
   html = html.replace("<!--CSS-->", css ? `<link rel="stylesheet" href="${rel(css)}">` : "")
     .replace("<!--JS-->", `<script type="module" src="${rel(js)}"></script>`);
   // 首屏要用的同步 chunk 预加载，避免瀑布
   const pre = (meta.outputs[js]?.imports || []).filter((i) => i.kind === "import-statement")
     .map((i) => `<link rel="modulepreload" href="${rel(i.path)}">`).join("");
   html = html.replace("<!--PRELOAD-->", pre);
-  fs.writeFileSync(path.join(DIST, "index.html"), html);
+  fs.writeFileSync(path.join(DIST, page), html);
 }
 
 function report(meta) {
@@ -186,7 +193,7 @@ async function build() {
   copyI18n();
   const opts = {
     absWorkingDir: ROOT,
-    entryPoints: ["src/main.ts"],
+    entryPoints: ["src/main.ts", "src/snippet.ts", "src/terminal.ts"],
     bundle: true,
     format: "esm",
     splitting: true,

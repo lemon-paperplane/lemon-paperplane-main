@@ -36,6 +36,8 @@ type Project struct {
 	DefaultByUser bool `json:"defaultByUser,omitempty"`
 	// Launch 是加到工作区「启动」面板的运行配置 id（按加入顺序）。工程换工作区时跟着走
 	Launch []string `json:"launch,omitempty"`
+	// LaunchAlias 是启动项的别名（运行配置 id → 别名），只在「启动」里显示，不改运行配置本身的名字
+	LaunchAlias map[string]string `json:"launchAlias,omitempty"`
 	// DetectVersion 是识别模块时所用规则的版本；内核的规则升级后，旧版本识别的工程会在后台自动重新识别
 	DetectVersion int `json:"detectVersion,omitempty"`
 }
@@ -134,23 +136,24 @@ type RunConfig struct {
 // 卡片摘要（project.list 返回）
 
 type ProjectSummary struct {
-	ID                string         `json:"id"`
-	Name              string         `json:"name"`
-	Path              string         `json:"path"`
-	WorkspaceID       string         `json:"workspaceId"`
-	Facets            []FacetBadge   `json:"facets"`
-	Info              []sdk.InfoItem `json:"info,omitempty"`
-	Status            string         `json:"status"` // idle | starting | running | failed | stopping | partial
-	Runs              []RunBrief     `json:"runs,omitempty"`
-	Configs           []ConfigBrief  `json:"configs"`
-	DefaultConfigID   string         `json:"defaultConfigId,omitempty"`
-	Launch            []string       `json:"launch,omitempty"` // 「启动」面板里的运行配置 id（只含仍存在的）
-	VCS               *VCSBrief      `json:"vcs,omitempty"`
-	Problems          int            `json:"problems"`
-	ProblemSeverity   string         `json:"problemSeverity,omitempty"`   // 最严重的：error | warning | info
-	MissingToolchains []string       `json:"missingToolchains,omitempty"` // 如 ["jdk 17"]
-	Dependencies      string         `json:"dependencies,omitempty"`      // ok | missing | outdated | unknown（各模块中最差的）
-	Busy              string         `json:"busy,omitempty"`              // 正在进行的任务标题（导入、同步、安装…）
+	ID                string            `json:"id"`
+	Name              string            `json:"name"`
+	Path              string            `json:"path"`
+	WorkspaceID       string            `json:"workspaceId"`
+	Facets            []FacetBadge      `json:"facets"`
+	Info              []sdk.InfoItem    `json:"info,omitempty"`
+	Status            string            `json:"status"` // idle | starting | running | failed | stopping | partial
+	Runs              []RunBrief        `json:"runs,omitempty"`
+	Configs           []ConfigBrief     `json:"configs"`
+	DefaultConfigID   string            `json:"defaultConfigId,omitempty"`
+	Launch            []string          `json:"launch,omitempty"`      // 「启动」面板里的运行配置 id（只含仍存在的）
+	LaunchAlias       map[string]string `json:"launchAlias,omitempty"` // 启动项别名（运行配置 id → 别名）
+	VCS               *VCSBrief         `json:"vcs,omitempty"`
+	Problems          int               `json:"problems"`
+	ProblemSeverity   string            `json:"problemSeverity,omitempty"`   // 最严重的：error | warning | info
+	MissingToolchains []string          `json:"missingToolchains,omitempty"` // 如 ["jdk 17"]
+	Dependencies      string            `json:"dependencies,omitempty"`      // ok | missing | outdated | unknown（各模块中最差的）
+	Busy              string            `json:"busy,omitempty"`              // 正在进行的任务标题（导入、同步、安装…）
 }
 
 // FacetBadge 是卡片上的技术徽标（已本地化）。
@@ -498,7 +501,26 @@ const (
 	EvPromptDone = "prompt.done"        // data: {id}
 	EvVCS        = "vcs.changed"        // data: {projectId, root}
 	EvStats      = "stats"              // data: []RunBrief（每 2 秒，只含运行中的）
+	EvTerminals  = "terminals.changed"  // data: []Terminal（全部终端）
 )
+
+// Terminal 是一个交互终端（伪终端里跑的登录 shell）。只在 daemon 内存里，daemon 退出即关闭。
+// 输出流：GET /api/v1/terminals/<id>/stream?since=<字节偏移>（SSE，data: {"o":偏移,"d":base64}）。
+type Terminal struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspaceId,omitempty"`
+	ProjectID   string    `json:"projectId,omitempty"` // 起始目录所在的工程
+	Name        string    `json:"name"`
+	Cwd         string    `json:"cwd"`   // 起始目录
+	Shell       string    `json:"shell"` // shell 可执行文件
+	PID         int       `json:"pid,omitempty"`
+	Cols        int       `json:"cols"`
+	Rows        int       `json:"rows"`
+	StartedAt   time.Time `json:"startedAt"`
+	Exited      bool      `json:"exited,omitempty"`
+	ExitCode    int       `json:"exitCode,omitempty"`
+	Output      int64     `json:"output"` // 累计输出字节数（流的末尾偏移）
+}
 
 // Prompt 是需要界面回答的对话框（host/prompt、git askpass）。
 type Prompt struct {

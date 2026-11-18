@@ -150,6 +150,8 @@ public struct FormField: Codable, Hashable, Identifiable {
     public var `default`: JSONValue?
     @DefArray public var options: [Option]
     public var optionsFrom: String?
+    /// type=code 时代码输入框的语言（如 shell）
+    public var language: String?
     public var placeholder: String?
     public var info: String?
     @DefBool public var required: Bool

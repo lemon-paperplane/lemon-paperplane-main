@@ -217,6 +217,59 @@ public extension APIClient {
         try await call("launch.remove", ["projectId": .string(projectId), "configIds": JSONValue(configIds)])
     }
 
+    // MARK: 终端
+
+    func terminalList(workspaceId: String? = nil) async throws -> [TerminalInfo] {
+        var args: [String: JSONValue] = [:]
+        if let workspaceId { args["workspaceId"] = .string(workspaceId) }
+        return try await call("terminal.list", .object(args))
+    }
+
+    /// 新建终端：起始目录是工程根目录，名字默认是工程名
+    func terminalCreate(projectId: String, cols: Int, rows: Int) async throws -> TerminalInfo {
+        try await call("terminal.create", ["projectId": .string(projectId), "cols": .number(Double(cols)), "rows": .number(Double(rows))])
+    }
+
+    func terminalRename(id: String, name: String) async throws {
+        try await send("terminal.rename", ["id": .string(id), "name": .string(name)])
+    }
+
+    func terminalRestart(id: String) async throws {
+        try await send("terminal.restart", ["id": .string(id)])
+    }
+
+    /// 终端里是否有命令在前台运行（关闭前确认用）
+    func terminalBusy(id: String) async throws -> TerminalBusy {
+        try await call("terminal.busy", ["id": .string(id)])
+    }
+
+    func terminalClose(id: String) async throws {
+        try await send("terminal.close", ["id": .string(id)])
+    }
+
+    /// 设置启动项别名（空字符串清除）
+    func launchSetAlias(projectId: String, configId: String, alias: String) async throws {
+        try await send("launch.setAlias", ["projectId": .string(projectId), "configId": .string(configId), "alias": .string(alias)])
+    }
+
+    /// 工程里能作为启动项运行的文件（脚本、程序；includeSources 时加上其他源码）
+    func launchCandidates(projectId: String, includeSources: Bool) async throws -> RunnableList {
+        try await call("launch.candidates", ["projectId": .string(projectId), "includeSources": .bool(includeSources)], timeout: 60)
+    }
+
+    /// 把工程里的脚本/可执行文件加到启动（同一文件已有运行配置就复用）
+    func launchAddFile(projectId: String, path: String) async throws -> LaunchAddResult {
+        try await call("launch.addFile", ["projectId": .string(projectId), "path": .string(path)])
+    }
+
+    /// 把一段自定义命令加到启动；cwd 为空表示工程根目录
+    func launchAddCommand(projectId: String, name: String, command: String, cwd: String, shell: String? = nil) async throws -> LaunchAddResult {
+        try await call("launch.addCommand", jsonObject([
+            "projectId": .string(projectId), "name": .string(name), "command": .string(command), "cwd": .string(cwd),
+            "shell": shell.map(JSONValue.string),
+        ]))
+    }
+
     func launchRun(workspaceId: String? = nil, projectId: String? = nil, configIds: [String]? = nil) async throws -> LaunchResult {
         try await call("launch.run", jsonObject([
             "workspaceId": workspaceId.map(JSONValue.string), "projectId": projectId.map(JSONValue.string),
