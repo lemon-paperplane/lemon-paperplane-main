@@ -1,0 +1,7 @@
+dist/
+**/bin/
+.DS_Store
+lemon-paperplane-main-core/bundled-plugins/
+lemon-paperplane-main-macos/**/xcuserdata/
+lemon-paperplane-main-macos/**/.build/
+lemon-paperplane-main-macos/**/DerivedData/

@@ -1,0 +1,3 @@
+/* App 显示名（Finder、Dock、菜单栏） */
+"CFBundleDisplayName" = "柠檬纸飞机";
+"CFBundleName" = "柠檬纸飞机";

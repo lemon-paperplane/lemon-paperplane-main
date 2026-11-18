@@ -1,0 +1,5 @@
+# 不内置、只放进随 App 附带的离线商店（用户在插件页「商店」里安装）的插件 id，一行一个
+keymap-intellij
+keymap-vscode
+keymap-vim
+keymap-emacs

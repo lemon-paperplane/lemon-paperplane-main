@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="RunManager" selected="Spring Boot.App">
+    <configuration name="App" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="online.vrtalk.api.starter.App" />
+      <module name="vrtalk-api.vrtalk-api-starter.main" />
+    </configuration>
+    <configuration name="App" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
+      <module name="vrtalk-api.vrtalk-api-starter.main" />
+      <option name="SPRING_BOOT_MAIN_CLASS" value="online.vrtalk.api.starter.App" />
+      <option name="ACTIVE_PROFILES" value="dev" />
+      <option name="VM_PARAMETERS" value="-Xmx1g -Dfoo=&quot;a b&quot;" />
+      <envs>
+        <env name="TZ" value="Asia/Shanghai" />
+      </envs>
+    </configuration>
+  </component>
+</project>
