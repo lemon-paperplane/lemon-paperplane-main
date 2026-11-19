@@ -212,7 +212,11 @@ private struct VCSToolbar: View {
             .divider,
             .item(tr("vcs.changes.stagingArea"), icon: "layers", checked: repo.changes.stagingArea) { repo.changes.stagingArea.toggle() },
             .divider,
-            .item(tr("vcs.revealRepo"), icon: "folder-open") { Actions.revealInFinder(repo.root) },
+        ]
+        if !Actions.isRemote {
+            e.append(.item(tr("vcs.revealRepo"), icon: "folder-open") { Actions.revealInFinder(repo.root) })
+        }
+        e += [
             .item(tr("vcs.copyRepoPath"), icon: "copy") { Actions.copy(repo.root) },
             .item(tr("vcs.clone.ellipsis"), icon: "download") { VCSCloneDialog.present() },
         ]

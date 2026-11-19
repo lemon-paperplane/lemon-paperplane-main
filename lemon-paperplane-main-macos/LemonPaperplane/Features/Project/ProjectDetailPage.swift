@@ -172,8 +172,13 @@ struct ProjectHeader: View {
                 StatusDot(state: summary.status, size: Self.dotSize)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(summary.name).font(.pp(.display)).lineLimit(1)
-                    PPLink(title: Format.abbreviatePath(summary.path), mono: true) { Actions.revealInFinder(summary.path) }
-                        .help(tr("open.finder"))
+                    if Actions.isRemote {
+                        Text(Format.abbreviatePath(summary.path)).font(.pp(.monoSmall)).foregroundColor(theme.textSecondary)
+                            .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                    } else {
+                        PPLink(title: Format.abbreviatePath(summary.path), mono: true) { Actions.revealInFinder(summary.path) }
+                            .help(tr("open.finder"))
+                    }
                 }
                 Spacer(minLength: M.lg)
                 runControls
@@ -201,8 +206,8 @@ struct ProjectHeader: View {
             let cid = configId
             let active = summary.runs.first { $0.configId == cid && RunState.isActive($0.state) }
             HStack(spacing: M.xs) {
-                if let url = active?.urls.first {
-                    PPButton(Format.shortURL(url), icon: "external-link", kind: .ghost, size: .small) { Actions.openURL(url) }
+                if let active, let url = active.urls.first {
+                    RunURLLinks(url: url, projectId: summary.id, configId: active.configId, style: .button)
                 }
                 PPDropdown(options: summary.configs.map { .init(value: $0.id, title: $0.name, icon: IconSource.parse($0.icon)) },
                            selection: Binding(get: { cid ?? "" }, set: { nav.selectedConfig[summary.id] = $0 }),
@@ -241,8 +246,10 @@ struct ProjectHeader: View {
             .item(tr("project.reimport"), icon: "refresh-cw") { Actions.reimport(summary.id) },
             .item(tr("project.sync"), icon: "refresh-cw") { Actions.sync(summary.id) },
             .item(tr("editorWindow.open"), icon: "file-pen") { EditorWindows.shared.open(projectId: summary.id) },
-            .submenu(tr("project.openWith"), icon: "external-link", Actions.openWithEntries(summary.id)),
         ]
+        if !Actions.isRemote {
+            e.append(.submenu(tr("project.openWith"), icon: "external-link", Actions.openWithEntries(summary.id)))
+        }
         if summary.hasActiveRun {
             e.append(.item(tr("card.stopAll"), icon: "square") { Actions.stopProject(summary.id) })
         }

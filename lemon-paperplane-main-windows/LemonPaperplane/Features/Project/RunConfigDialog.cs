@@ -37,6 +37,10 @@ public sealed class RunConfigDialog : AsyncDialog
     private readonly DispatcherTimer _liveTimer;
     private int _loadGen;
     private bool _liveBusy;
+    /// <summary>连接远程服务器时运行地址的打开方式（docs/remote.md 5.4）：至少一个。</summary>
+    private readonly RemoteLinks _initialLinks;
+    private readonly State<bool> _linkForward;
+    private readonly State<bool> _linkDirect;
 
     private RunConfigDialog(string id, Project project, Mode mode, RunConfig? config) : base(id)
     {
@@ -53,6 +57,9 @@ public sealed class RunConfigDialog : AsyncDialog
         _env = config == null ? new List<KeyValuePair<string, string>>() : config.Env.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();
         _liveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
         _liveTimer.Tick += (_, _) => RefreshLiveOptions();
+        _initialLinks = config != null && project.RemoteLinks.TryGetValue(config.Id, out var l) ? l : new RemoteLinks();
+        _linkForward = new State<bool>(_initialLinks.Forward);
+        _linkDirect = new State<bool>(_initialLinks.Direct);
     }
 
     public static void PresentNew(Project project)
@@ -194,18 +201,26 @@ public sealed class RunConfigDialog : AsyncDialog
         var mid = _moduleId.Value;
         var type = _typeId.Value;
         var pid = _project.Id;
+        var remote = _app.IsRemote;
+        var forward = _linkForward.Value;
+        var direct = _linkDirect.Value;
+        var linksChanged = forward != (mode == Mode.Edit ? _initialLinks.Forward : true) || direct != (mode == Mode.Edit ? _initialLinks.Direct : true);
         Run(async () =>
         {
             var api = _app.Client();
+            string configId;
             if (mode == Mode.Edit && source != null)
             {
                 await api.UpdateRunConfigAsync(pid, source.Id, n, opts, env);
+                configId = source.Id;
             }
             else
             {
                 var c = await api.CreateRunConfigAsync(pid, mid, type, n, opts, env);
                 _app.Nav.SelectConfig(pid, c.Id);
+                configId = c.Id;
             }
+            if (remote && linksChanged) await api.SetRemoteLinksAsync(pid, configId, forward, direct);
             _app.Bus.RaiseProjectChanged(pid);
         });
     }
@@ -276,6 +291,17 @@ public sealed class RunConfigDialog : AsyncDialog
         var envRow = HStack(M.Md, envLabel, envEditor.Flex());
         envRow.Align = CrossAlign.Start;
         col.Children.Add(envRow);
+        if (_app.IsRemote)
+        {
+            // 远程访问方式：端口转发到本机 / 服务器地址（至少留一个）
+            var forward = new PPCheckbox(Bind.Of(() => _linkForward.Value, v => { if (v || _linkDirect.Value) _linkForward.Value = v; Invalidate(); }),
+                L.T("runconfig.remoteLinks.forward")).Id("runconfig.remoteLinks.forward");
+            var direct = new PPCheckbox(Bind.Of(() => _linkDirect.Value, v => { if (v || _linkForward.Value) _linkDirect.Value = v; Invalidate(); }),
+                L.T("runconfig.remoteLinks.direct")).Id("runconfig.remoteLinks.direct");
+            var label = HStack(M.Xs, Text(L.T("runconfig.remoteLinks")), new PPInfoButton(L.T("runconfig.remoteLinks.info"))).W(M.FormLabelWidth).Shrink(false);
+            col.Children.Add(new PPDivider(subtle: true));
+            col.Children.Add(HStack(M.Md, label, HStack(M.Lg, forward, direct)));
+        }
         if (ErrorAlert is { } alert) col.Children.Add(alert);
 
         var cancel = new PPButton(L.T("common.cancel"), Close).Id("dialog.cancel");

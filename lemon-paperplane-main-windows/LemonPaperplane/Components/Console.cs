@@ -928,7 +928,7 @@ internal sealed class ConsoleTextView : FrameworkElement
         {
             _selAnchor = _selActive = null;
             InvalidateVisual();
-            if (_downLink != null && LinkAt(e.GetPosition(this)) == _downLink) Actions.OpenURL(_downLink);
+            if (_downLink != null && LinkAt(e.GetPosition(this)) == _downLink) Actions.OpenServerURL(_downLink);
         }
         e.Handled = true;
     }
@@ -1457,7 +1457,7 @@ public sealed class ConsolePanel : PPView
             _followButton,
             new PPIconButton("copy", L.T("console.copy"), CopyAll).Id("console.copy"),
             new PPIconButton("eraser", L.T("console.clear"), ClearAll).Id("console.clear"),
-            !string.IsNullOrEmpty(_logFile) && !_compact ? new PPIconButton("file-text", L.T("console.openLog"), () => Actions.OpenFile(_logFile!)).Id("console.openLog") : null);
+            !string.IsNullOrEmpty(_logFile) && !_compact && Actions.LocalOnlyAvailable ? new PPIconButton("file-text", L.T("console.openLog"), () => Actions.OpenFile(_logFile!)).Id("console.openLog") : null);
         var toolbarBox = Box(toolbar).Pad(M.Sm, 0).H(M.ToolbarHeight).Bg(ColorToken.BgContent);
 
         // 搜索条

@@ -386,8 +386,14 @@ private struct VCSOverviewHeader: View {
             .item(tr("vcs.overview.openInProject"), icon: "git-branch") {
                 VCSSession.of(entry.projectId).reveal(root: entry.root, page: .changes)
             },
-            .item(tr("vcs.revealInFinder"), icon: "folder-open") { Actions.revealInFinder(entry.root) },
-            .item(tr("vcs.overview.openInTerminal"), icon: "square-terminal") { VCSOverviewActions.openInTerminal(entry.root) },
+        ]
+        if !Actions.isRemote {
+            e += [
+                .item(tr("vcs.revealInFinder"), icon: "folder-open") { Actions.revealInFinder(entry.root) },
+                .item(tr("vcs.overview.openInTerminal"), icon: "square-terminal") { VCSOverviewActions.openInTerminal(entry.root) },
+            ]
+        }
+        e += [
             .item(tr("vcs.copyRepoPath"), icon: "copy") { Actions.copy(entry.root) },
             .divider,
             .item(tr("vcs.pull.ellipsis"), icon: "arrow-down-to-line") { VCSPullDialog.present(repo: repo) },

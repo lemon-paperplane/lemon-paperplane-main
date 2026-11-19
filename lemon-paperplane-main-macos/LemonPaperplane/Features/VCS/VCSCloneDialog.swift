@@ -13,7 +13,7 @@ enum VCSCloneDialog {
     private struct Body: View {
         let id: String
         @State private var url = ""
-        @State private var parent = UserDefaults.standard.string(forKey: "PaperplaneVCSCloneDir") ?? (NSHomeDirectory() as NSString).appendingPathComponent("Code")
+        @State private var parent = Self.defaultParent
         @State private var folder = ""
         @State private var folderEdited = false
         @State private var branch = ""
@@ -25,7 +25,20 @@ enum VCSCloneDialog {
         @ObservedObject private var runs = AppModel.shared.runs
         @Environment(\.theme) private var theme
 
-        private var dest: String { (parent as NSString).appendingPathComponent(folder) }
+        /// 目标目录在当前服务器上：按服务器的路径规则拼（连着 Windows 服务器时是 C:\…）
+        private var dest: String { AppModel.shared.serverPath.join(parent, folder) }
+
+        /// 上次用的父目录按服务器分开记
+        private static var parentKey: String {
+            AppModel.shared.servers.currentId.map { "PaperplaneVCSCloneDir." + $0 } ?? "PaperplaneVCSCloneDir"
+        }
+
+        private static var defaultParent: String {
+            if let saved = UserDefaults.standard.string(forKey: parentKey) { return saved }
+            let model = AppModel.shared
+            let home = model.isRemote ? (model.systemInfo?.home ?? "") : NSHomeDirectory()
+            return home.isEmpty ? "" : model.serverPath.join(home, "Code")
+        }
 
         var body: some View {
             PPDialog(title: tr("vcs.clone.title"), width: 560, onClose: busy ? nil : { close() }) {
@@ -100,13 +113,8 @@ enum VCSCloneDialog {
         }
 
         private func choose() {
-            let p = NSOpenPanel()
-            p.canChooseDirectories = true
-            p.canChooseFiles = false
-            p.canCreateDirectories = true
-            p.allowsMultipleSelection = false
-            p.directoryURL = URL(fileURLWithPath: parent)
-            if p.runModal() == .OK, let u = p.url { parent = u.path }
+            let binding = $parent
+            PathPicker.choose(title: tr("vcs.clone.directory"), kind: .folder, initial: parent) { binding.wrappedValue = $0 }
         }
 
         private func close() { AppModel.shared.dialogs.dismiss(id) }
@@ -117,7 +125,7 @@ enum VCSCloneDialog {
             busy = true
             started = Date()
             error = nil
-            UserDefaults.standard.set(parent, forKey: "PaperplaneVCSCloneDir")
+            UserDefaults.standard.set(parent, forKey: Self.parentKey)
             let b = branch.trimmingCharacters(in: .whitespaces)
             Task {
                 do {

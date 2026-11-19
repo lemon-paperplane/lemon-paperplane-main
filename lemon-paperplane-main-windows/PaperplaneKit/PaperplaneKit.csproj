@@ -20,16 +20,28 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
-    <Compile Include="..\build\Polyfills.cs" Link="Polyfills.cs" />
+    <Compile Include="..\build\Polyfills.cs">
+      <Link>Polyfills.cs</Link>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <!-- 三端共用资源：文案、设计变量、图标、品牌图形（运行时从程序集资源读取） -->
-    <EmbeddedResource Include="$(SharedDir)i18n\*.json" LogicalName="shared/i18n/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(SharedDir)i18n\*.json">
+      <LogicalName>shared/i18n/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- Windows 文案覆盖（访达 → 资源管理器等），加载时盖在基础文案上 -->
-    <EmbeddedResource Include="$(SharedDir)i18n\windows\*.json" LogicalName="shared/i18n/windows/%(Filename)%(Extension)" />
-    <EmbeddedResource Include="$(SharedDir)design-tokens.json" LogicalName="shared/design-tokens.json" />
-    <EmbeddedResource Include="$(SharedDir)icons\*.svg" LogicalName="shared/icons/%(Filename)%(Extension)" />
-    <EmbeddedResource Include="$(SharedDir)branding\*.svg" LogicalName="shared/branding/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(SharedDir)i18n\windows\*.json">
+      <LogicalName>shared/i18n/windows/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(SharedDir)design-tokens.json">
+      <LogicalName>shared/design-tokens.json</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(SharedDir)icons\*.svg">
+      <LogicalName>shared/icons/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(SharedDir)branding\*.svg">
+      <LogicalName>shared/branding/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -274,6 +274,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, WKNavigationDele
             // 用户在网页的未保存提示里点了取消：窗口保持打开，宿主没有挂起的关闭状态需要恢复
             break
         case "reveal":
+            // 连着远程服务器时文件不在本机：Actions.revealInFinder 会提示
             if let p = body["path"] as? String { FileActions.revealInFinder(p, projectPath: projectPath) }
         case "openExternal":
             if let s = body["url"] as? String, let u = URL(string: s), ["http", "https", "mailto"].contains(u.scheme?.lowercased() ?? "") {

@@ -3,6 +3,9 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +13,7 @@ import (
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/model"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/plugins"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/proc"
+	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/remote"
 	sdk "github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-plugin-sdk"
 )
 
@@ -33,7 +37,7 @@ var categoryRank = map[string]int{"framework": 0, "language": 1, "runtime": 2, "
 // Summary 生成工程卡片摘要。
 func (e *Engine) Summary(p *model.Project) model.ProjectSummary {
 	s := model.ProjectSummary{ID: p.ID, Name: p.Name, Path: p.Path, WorkspaceID: p.WorkspaceID, DefaultConfigID: p.DefaultConfigID, Configs: []model.ConfigBrief{}, Facets: []model.FacetBadge{},
-		Launch: launchIDs(p), LaunchAlias: launchAliases(p), LastRun: p.LastRun}
+		Launch: launchIDs(p), LaunchAlias: launchAliases(p), RemoteLinks: p.RemoteLinks, LastRun: p.LastRun}
 	seen := map[string]bool{}
 	prio := map[string]int{}
 	for _, m := range p.Modules {
@@ -272,9 +276,15 @@ func (e *Engine) RenderView(ctx context.Context, pluginID, view, projectID, modu
 	}
 	for _, v := range plug.Manifest.Contributes.Views {
 		if v.ID == view && v.Kind == "webview" {
-			// webview 视图不调插件：返回页面地址，由界面用内嵌浏览器加载
-			q := "?token=" + e.token + "&projectId=" + projectID + "&moduleId=" + moduleID + "&runId=" + runID
-			b, _ := json.Marshal(map[string]any{"webviewUrl": e.apiBase + "/plugins/" + plug.ID() + "/" + strings.TrimPrefix(v.Entry, "/") + q})
+			// webview 视图不调插件：返回页面地址，由界面用内嵌浏览器加载。
+			// 远程调用只给相对路径、不带本机令牌：客户端拼上自己网关的地址和令牌（本机令牌绝不出这台机器）
+			q := "projectId=" + url.QueryEscape(projectID) + "&moduleId=" + url.QueryEscape(moduleID) + "&runId=" + url.QueryEscape(runID)
+			path := "/plugins/" + plug.ID() + "/" + strings.TrimPrefix(v.Entry, "/")
+			u := e.apiBase + path + "?token=" + e.token + "&" + q
+			if remote.PrincipalFrom(ctx) != nil {
+				u = path + "?" + q
+			}
+			b, _ := json.Marshal(map[string]any{"webviewUrl": u})
 			return b, nil
 		}
 	}
@@ -368,7 +378,10 @@ func (e *Engine) SystemInfo(pid int, locale, mcpURL string) model.SystemInfo {
 		MemoryMB: round1(proc.RSSMB(pid)), PluginProcs: len(pp), PluginMemoryMB: round1(proc.RSSMB(pp...)),
 		Locale: locale, MirrorRegion: region,
 		Plugins: len(e.Plugins.Active()), PluginDirs: e.cfg.BundledDirs,
+		PathSeparator: string(filepath.Separator), APIVersion: remoteAPIVersion,
 	}
+	info.Hostname, _ = os.Hostname()
+	info.Home, _ = os.UserHomeDir()
 	for _, p := range e.Plugins.All() {
 		if p.Error != "" {
 			info.PluginErrors = append(info.PluginErrors, p.ID()+": "+p.Error)

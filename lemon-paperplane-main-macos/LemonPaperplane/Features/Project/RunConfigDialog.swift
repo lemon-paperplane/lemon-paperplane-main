@@ -21,6 +21,9 @@ struct RunConfigDialog: View {
     @State private var showErrors = false
     /// 实时下拉选项（如已连接设备），覆盖分析时取的快照
     @State private var liveOptions: [String: [Option]] = [:]
+    /// 连着远程服务器时运行地址的打开方式（runconfig.setRemoteLinks；至少选一个）
+    @State private var remoteLinks: RemoteLinks
+    private let initialRemoteLinks: RemoteLinks
     @ObservedObject private var data = AppModel.shared.data
     @Environment(\.theme) private var theme
 
@@ -34,13 +37,16 @@ struct RunConfigDialog: View {
             _name = State(initialValue: "")
             _values = State(initialValue: [:])
             _env = State(initialValue: [])
+            initialRemoteLinks = .both
         case .edit(let c), .duplicate(let c):
+            initialRemoteLinks = project.remoteLinks(for: c.id)
             _moduleId = State(initialValue: c.moduleId ?? project.modules.first?.id ?? "")
             _name = State(initialValue: { if case .duplicate = mode { return c.name + " " + tr("runconfig.copySuffix") } else { return c.name } }())
             _values = State(initialValue: c.options)
             _env = State(initialValue: c.env.map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 })
             _typeId = State(initialValue: c.type)
         }
+        _remoteLinks = State(initialValue: initialRemoteLinks)
     }
 
     static func presentNew(project: Project) {
@@ -129,6 +135,10 @@ struct RunConfigDialog: View {
                     Text(tr("config.env")).frame(width: M.formLabelWidth, alignment: .leading).padding(.top, 6)
                     KeyValueEditor(pairs: $env)
                 }
+                if AppModel.shared.isRemote {
+                    PPDivider(subtle: true)
+                    remoteLinksRow
+                }
                 if let error { PPAlert(tone: "danger", title: error) }
             }
         } footer: {
@@ -153,6 +163,24 @@ struct RunConfigDialog: View {
         HStack(spacing: M.md) {
             Text(title).frame(width: M.formLabelWidth, alignment: .leading)
             c()
+        }
+    }
+
+    /// 远程访问方式：端口转发到本机 / 服务器地址（至少选一个：取消最后一个时不生效）
+    private var remoteLinksRow: some View {
+        HStack(spacing: M.md) {
+            HStack(spacing: M.xs) {
+                Text(tr("runconfig.remoteLinks"))
+                PPInfoButton(text: tr("runconfig.remoteLinks.info"))
+            }
+            .frame(width: M.formLabelWidth, alignment: .leading)
+            PPCheckbox(isOn: Binding(get: { remoteLinks.forward }, set: { v in
+                if v || remoteLinks.direct { remoteLinks.forward = v }
+            }), label: tr("runconfig.remoteLinks.forward"))
+            PPCheckbox(isOn: Binding(get: { remoteLinks.direct }, set: { v in
+                if v || remoteLinks.forward { remoteLinks.direct = v }
+            }), label: tr("runconfig.remoteLinks.direct"))
+            Spacer(minLength: 0)
         }
     }
 
@@ -184,13 +212,22 @@ struct RunConfigDialog: View {
         Task {
             do {
                 let api = try AppModel.shared.client()
+                var configId = ""
                 switch mode {
                 case .edit(let c):
                     _ = try await api.updateRunConfig(projectId: project.id, configId: c.id, name: n, options: opts, env: envDict)
+                    configId = c.id
                 case .create, .duplicate:
                     let c = try await api.createRunConfig(projectId: project.id, moduleId: moduleId, type: typeId, name: n,
                                                           options: opts, env: envDict)
                     AppModel.shared.nav.selectedConfig[project.id] = c.id
+                    configId = c.id
+                }
+                // 新建的配置没有记录（= 两种都要）；只在和原来不同时写
+                let before: RemoteLinks = isEdit ? initialRemoteLinks : .both
+                if AppModel.shared.isRemote, remoteLinks != before, !configId.isEmpty {
+                    try await api.setRemoteLinks(projectId: project.id, configId: configId,
+                                                 forward: remoteLinks.forward, direct: remoteLinks.direct)
                 }
                 AppModel.shared.bus.projectChanged.send(project.id)
                 close()

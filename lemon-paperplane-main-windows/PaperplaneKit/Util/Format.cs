@@ -45,12 +45,17 @@ public abstract record IconSource
 /// <summary>界面上的数值格式化（对应 Mac 的 Format；数字按 C printf 规则舍入，输出与 Mac 一致）。</summary>
 public static class Format
 {
+    /// <summary>当前服务器（本机或远程）的主目录与路径分隔符：界面连上后设置；没设置时按本机。</summary>
+    public static string? ServerHome { get; set; }
+    public static string ServerSeparator { get; set; } = "\\";
+
     /// <summary>
     /// 把用户主目录缩写为 ~。Windows 上不区分大小写，主目录后面可以是 \ 或 /。
-    /// home 默认 %USERPROFILE%。
+    /// home 默认当前服务器的主目录（ServerHome，按 ServerSeparator 的规则），没有时 %USERPROFILE%。
     /// </summary>
     public static string AbbreviatePath(string path, string? home = null)
     {
+        if (home == null && !string.IsNullOrEmpty(ServerHome)) return ServerPath.Abbreviate(path, ServerHome!, ServerSeparator);
         home ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         if (string.IsNullOrEmpty(home) || !path.StartsWith(home, StringComparison.OrdinalIgnoreCase)) return path;
         var rest = path.Substring(home.Length);

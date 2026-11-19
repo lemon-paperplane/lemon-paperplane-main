@@ -294,7 +294,10 @@ internal sealed class ProjectHeader : PPView
         var s = _app.Data.Project(_projectId);
         if (s == null) return Gap(0);
         var nav = _app.Nav;
-        var path = new PPLink(Format.AbbreviatePath(s.Path), () => Actions.RevealInExplorer(s.Path), mono: true).Tip(L.T("open.finder")).Id("project.path");
+        // 连着远程服务器时路径在服务器上：只显示，不能在资源管理器中打开
+        FrameworkElement path = Actions.LocalOnlyAvailable
+            ? new PPLink(Format.AbbreviatePath(s.Path), () => Actions.RevealInExplorer(s.Path), mono: true).Tip(L.T("open.finder")).Id("project.path")
+            : TextMiddle(Format.AbbreviatePath(s.Path), Typo.MonoSmall, ColorToken.TextSecondary).Tip(s.Path).Id("project.path");
         path.HorizontalAlignment = HorizontalAlignment.Left;
         var titleCol = VStack(3, Text(s.Name, Typo.Display).Id("project.name"), path).Shrink().MinW(120);
         var more = new PPMenuButton(() => MoreMenu(s),
@@ -329,9 +332,11 @@ internal sealed class ProjectHeader : PPView
     /// </summary>
     private UIElement? UrlButton(ProjectSummary s)
     {
-        if (s.Configs.Count == 0 || ActiveRun(s, ConfigId(s))?.Urls.FirstOrDefault() is not { } url) return null;
-        var b = new PPButton(Format.ShortURL(url), () => Actions.OpenURL(url), icon: "external-link", kind: PPButtonKind.Ghost, size: PPButtonSize.Small).Id("project.url");
-        var h = new HideWhenTight(b).Shrink();
+        if (s.Configs.Count == 0 || ActiveRun(s, ConfigId(s)) is not { } run || run.Urls.FirstOrDefault() is not { } url) return null;
+        // 连着远程服务器时：⇄ 端口转发 / 服务器地址 两个按钮（按运行配置的远程访问方式）
+        var b = RunAddress.Buttons(url, s.Id, run.ConfigId);
+        // 远程时两个按钮各自放不下就让出来（RunAddress 里处理），本机一个按钮整体让出
+        FrameworkElement h = _app.IsRemote && b is Stack ? b.Shrink() : new HideWhenTight(b).Shrink();
         h.Margin = new Thickness(0, 0, M.Xs - M.Md, 0); // 和下拉框之间用运行控件内部的间距
         return h;
     }
@@ -381,8 +386,8 @@ internal sealed class ProjectHeader : PPView
             MenuEntry.Item(L.T("project.reimport"), () => Actions.Reimport(s.Id), icon: "refresh-cw"),
             MenuEntry.Item(L.T("project.sync"), () => Actions.Sync(s.Id), icon: "refresh-cw"),
             MenuEntry.Item(L.T("editorWindow.open"), () => EditorWindows.Shared.Open(s.Id), icon: "file-pen"),
-            MenuEntry.Submenu(L.T("project.openWith"), Actions.OpenWithEntries(s.Id), icon: "external-link"),
         };
+        if (Actions.LocalOnlyAvailable) e.Add(MenuEntry.Submenu(L.T("project.openWith"), Actions.OpenWithEntries(s.Id), icon: "external-link"));
         if (s.HasActiveRun) e.Add(MenuEntry.Item(L.T("card.stopAll"), () => Actions.StopProject(s.Id), icon: "square"));
         if (acts.Count > 0)
         {

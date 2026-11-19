@@ -444,10 +444,12 @@ enum VCSFileMenu {
             VCSStashDialogs.presentNew(repo: repo, paths: paths)
         })
         e.append(.divider)
-        e.append(.item(tr("vcs.revealInFinder"), icon: "folder-open") {
-            let abs = VCSPath.join(repo.root, first.path)
-            Actions.revealInFinder(FileManager.default.fileExists(atPath: abs) ? abs : VCSPath.join(repo.root, VCSPath.dir(first.path)))
-        })
+        if !Actions.isRemote {
+            e.append(.item(tr("vcs.revealInFinder"), icon: "folder-open") {
+                let abs = VCSPath.join(repo.root, first.path)
+                Actions.revealInFinder(FileManager.default.fileExists(atPath: abs) ? abs : VCSPath.join(repo.root, VCSPath.dir(first.path)))
+            })
+        }
         e.append(.item(tr("vcs.copyPath"), icon: "copy") { Actions.copy(paths.joined(separator: "\n")) })
         e.append(.item(tr("vcs.copyAbsolutePath"), icon: "copy") {
             Actions.copy(paths.map { VCSPath.join(repo.root, $0) }.joined(separator: "\n"))

@@ -389,10 +389,7 @@ internal sealed class RunControls : PPView
             _status = Text(StatusText(run), Typo.Small, ColorToken.TextSecondary).Id("run.status");
             row.Children.Add(HStack(M.Sm, new StatusDot(run.State), _status).Margins(M.Sm, 0, M.Sm, 0).Shrink());
             foreach (var u in run.Urls.Take(2))
-            {
-                var url = u;
-                row.Children.Add(new PPLink(Format.ShortURL(url), () => Actions.OpenURL(url), mono: true, icon: "external-link").Margins(0, 0, M.Sm, 0).Shrink());
-            }
+                row.Children.Add(Box(RunAddress.Links(u, project.Id, config.Id, localIcon: "external-link")).Margins(0, 0, M.Sm, 0).Shrink());
             if (active) row.Children.Add(new RunResourceText(run.Id, fallbackCpu: run.Cpu, fallbackRss: run.RssMB));
         }
         var module = project.Module(config.ModuleId);

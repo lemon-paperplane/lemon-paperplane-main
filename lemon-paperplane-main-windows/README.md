@@ -32,10 +32,8 @@
 
 ## 发布包
 
-在 Mac 上一条命令（交叉编译 x64 / ARM64 内核与插件 → 构建编辑器网页 → 到 Windows 编译机编译界面、打 zip 和安装包 → 取回）：
+在仓库根目录执行 `build.cmd`（新电脑也可以，依赖自动准备，见[根目录 README](../README.md#打包)），产物在 `../dist/windows/`：
+`LemonPaperplane-<版本>-windows-<x64|arm64>-setup.exe` 与 `.zip`。
 
-```bash
-WINDOWS_BUILD_HOST=user@host ../scripts/build-windows.sh 0.1.0
-```
-
-产物在 `../dist/windows/`：`LemonPaperplane-<版本>-windows-<x64|arm64>-setup.exe` 与 `.zip`。编译机需要 OpenSSH 服务、MSBuild（或 EWDK）、Inno Setup 6。也可以在 Windows 上直接跑 `package.ps1`（内核目录先用 `../scripts/build-windows-runtime.sh` 生成）。
+根目录脚本用 Windows 自带的 MSBuild 4.x 加 NuGet 上的 Roslyn 编译（`build/Common.props` 里对 MSBuild 4.x 的兼容就是为它准备的），
+不需要 Visual Studio；`package.ps1` 负责整理安装目录、打 zip 和调用 Inno Setup。

@@ -46,7 +46,8 @@ public static class VCSCloneDialog
         public Body(string id)
         {
             _id = id;
-            _parent = new State<string>(VCSPrefs.String("VCSCloneDir") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Code"));
+            // 克隆目录是服务器上的路径：远程时按服务器分别记住，默认服务器主目录下的 Code
+            _parent = new State<string>(VCSPrefs.String(CloneDirKey) ?? ServerFiles.Join(ServerFiles.Home, "Code"));
             _workspaceId = UseState(Actions.TargetWorkspaceId ?? "");
             _busy = UseState(false);
             _error = UseState<string?>(null);
@@ -54,7 +55,9 @@ public static class VCSCloneDialog
             Observe(AppModel.Shared.Runs, nameof(RunStore.Tasks));
         }
 
-        private string Dest => _folder.Value.Length == 0 ? _parent.Value : Path.Combine(_parent.Value, _folder.Value);
+        private static string CloneDirKey => AppModel.Shared.Server is { } s ? "VCSCloneDir:" + s.Id : "VCSCloneDir";
+
+        private string Dest => _folder.Value.Length == 0 ? _parent.Value : ServerFiles.Join(_parent.Value, _folder.Value);
 
         private void Changed()
         {
@@ -136,15 +139,13 @@ public static class VCSCloneDialog
             return dlg;
         }
 
-        private void Choose()
-        {
-            if (ImportFlow.ChooseFolder(L.T("vcs.clone.directory"), Directory.Exists(_parent.Value) ? _parent.Value : null) is { } p)
+        private void Choose() =>
+            ServerFiles.ChooseFolder(L.T("vcs.clone.directory"), _parent.Value, p =>
             {
                 _parent.Value = p;
                 _parentField?.Sync();
                 Changed();
-            }
-        }
+            });
 
         private void Close() => Dialogs.Dismiss(_id);
 
@@ -155,7 +156,7 @@ public static class VCSCloneDialog
             _busy.Value = true;
             _started = DateTimeOffset.Now;
             _error.Value = null;
-            VCSPrefs.SetString("VCSCloneDir", _parent.Value);
+            VCSPrefs.SetString(CloneDirKey, _parent.Value);
             var b = _branch.Value.Trim();
             var wsId = _workspaceId.Value;
             try

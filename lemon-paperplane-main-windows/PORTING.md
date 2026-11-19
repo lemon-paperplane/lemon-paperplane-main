@@ -52,12 +52,12 @@ lemon-paperplane-main-windows/
 日常在 Mac 上写代码，在一台 Windows 编译机上编译和测试（OpenSSH 服务 + 免密登录）：
 
 - 编译：`build.ps1`（自己找 MSBuild 和 4.8 参考程序集）；`build.ps1 -Test` 跑 PaperplaneKit.Tests。编译机上可以是 Visual Studio / Build Tools，也可以是挂载的 EWDK（自带 MSBuild 18 和最新 Roslyn）。
-- 内核：用 `../scripts/build-windows-runtime.sh <输出目录> amd64` 在 Mac 上交叉编译 Windows 版内核 + 内置插件，拷到编译机；界面用环境变量 `PAPERPLANE_BIN` 指向其中的 `paperplane.exe`，`PAPERPLANE_DATA_DIR` 隔离数据目录（不要用默认数据目录测试）。
+- 内核：用 `../scripts/build-windows-runtime.sh <输出目录> amd64`（或在 Windows 上 `go -C ../scripts/ppbuild run . runtime …`）交叉编译 Windows 版内核 + 内置插件，拷到编译机；界面用环境变量 `PAPERPLANE_BIN` 指向其中的 `paperplane.exe`，`PAPERPLANE_DATA_DIR` 隔离数据目录（不要用默认数据目录测试）。
 - **界面能在 ssh 会话里跑**（没有可见桌面，软件渲染）：窗口照常创建，`RenderTargetBitmap` 能把窗口画成 PNG，用调试桥（第 6 节）截图、导航、点击。
 - **但 ssh 会话里起的进程继承了 sshd 的「重定向保护」**，打不开普通用户建的目录联接（例如 uv 的 `cpython-3.12-…`），和真实环境不一样：测内核、插件时用计划任务（`schtasks /IT` + `conhost --headless`）把内核起在用户的桌面会话里。WebView2（编辑窗口、终端）、真实鼠标和托盘也要在桌面会话里测。
 - ssh 命令结束时 sshd 会结束它派生的进程：一次测试的启动、操作、截图放在同一条命令里。
 - PowerShell 5.1 按系统代码页读没有 BOM 的 `.ps1`：仓库里的 `.ps1` 必须带 UTF-8 BOM；给原生程序传 JSON 参数要把双引号转义成 `\"`。
-- 发布包：`../scripts/build-windows.sh`（见 README）。
+- 发布包：仓库根目录的 `build.cmd`（在 Windows 上）或 `../scripts/build-windows.sh`（在 Mac 上远程构建），见 README。
 
 ## 6. 调试桥（自动化测试用）
 
@@ -98,6 +98,7 @@ lemon-paperplane-main-windows/
 | 工程详情、运行、控制台、启动、表单、插件视图 | 完成，已合并（控制台 20 万行压测界面线程最长 9ms） |
 | 版本控制 | 完成，已合并（差异、日志图虚拟化自绘） |
 | 文件、编辑窗口、终端、WebView2、代码输入框、插件网页视图 | 完成，已合并（编辑器网页同时支持 WKWebView 与 WebView2） |
-| 打包（安装包 + zip，x64 / ARM64） | `../scripts/build-windows.sh`，已能出包 |
+| 远程服务器（docs/remote.md 第 5 节：左上角切换器、添加服务器、设置 → 服务器、选择服务器上的文件夹、运行地址转发 / 直连、远程时隐藏本机操作；`Core/Servers.cs`、`Features/Servers/*`） | 完成，Windows 上连本机另起的服务器内核测过（连接码 / 账号密码、导入运行、端口转发、吊销后 403、服务器断开与恢复、本机内核重启后重开网关） |
+| 打包（安装包 + zip，x64 / ARM64） | 根目录 `build.cmd`，新电脑也能直接出包 |
 
 已知还没在真实鼠标 / 桌面上验证的：卡片与工作区拖动排序、系统选择文件夹对话框弹出、贴靠布局弹出、托盘浮窗位置、多显示器 DPI。

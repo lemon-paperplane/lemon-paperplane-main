@@ -321,12 +321,22 @@ func (p *Plugin) executable() string {
 
 // command 返回插件进程的可执行文件与参数。Windows 没有符号链接：内置插件的 bin 下放
 // <名字>.bundled，内容是多入口程序 paperplane-plugins.exe 的相对路径，启动时把插件 id 作为参数传给它。
+//
+// 单文件版（Linux 无头版）的 .bundled 内容是 "@self"：插件编在内核可执行文件里，以 `<内核> __plugin <id>` 启动。
 func (p *Plugin) command() (string, []string) {
 	exe := p.executable()
-	if runtime.GOOS == "windows" && !fileExists(exe) {
+	if !fileExists(exe) {
 		base := strings.TrimSuffix(filepath.Join(p.Dir, filepath.FromSlash(p.Manifest.Executable)), ".exe")
 		if b, err := os.ReadFile(base + ".bundled"); err == nil {
-			return filepath.Clean(filepath.Join(filepath.Dir(base), strings.TrimSpace(string(b)))), []string{p.ID()}
+			target := strings.TrimSpace(string(b))
+			if target == "@self" {
+				if self, err := os.Executable(); err == nil {
+					return self, []string{"__plugin", p.ID()}
+				}
+			}
+			if runtime.GOOS == "windows" {
+				return filepath.Clean(filepath.Join(filepath.Dir(base), target)), []string{p.ID()}
+			}
 		}
 	}
 	return exe, nil

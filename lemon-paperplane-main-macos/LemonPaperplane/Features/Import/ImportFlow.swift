@@ -5,26 +5,23 @@ import SwiftUI
 /// 导入：选择文件夹 → 预览（识别结果、名称、工作区）→ 导入；或扫描文件夹 → 勾选 → 批量导入。
 @MainActor
 enum ImportFlow {
-    static func chooseFolder(title: String) -> String? {
-        let p = NSOpenPanel()
-        p.canChooseDirectories = true
-        p.canChooseFiles = false
-        p.allowsMultipleSelection = false
-        p.prompt = title
-        p.message = title
-        return p.runModal() == .OK ? p.url?.path : nil
+    /// 选文件夹：本机用系统对话框，连着远程服务器时选服务器上的文件夹
+    static func chooseFolder(title: String, then: @escaping (String) -> Void) {
+        PathPicker.choose(title: title, kind: .folder, completion: then)
     }
 
     static func importFolder() {
-        guard let path = chooseFolder(title: tr("import.folder")) else { return }
-        let id = "import-" + path
-        AppModel.shared.dialogs.present(id: id) { ImportPreviewDialog(id: id, path: path) }
+        chooseFolder(title: tr("import.folder")) { path in
+            let id = "import-" + path
+            AppModel.shared.dialogs.present(id: id) { ImportPreviewDialog(id: id, path: path) }
+        }
     }
 
     static func scanFolder() {
-        guard let path = chooseFolder(title: tr("import.scan")) else { return }
-        let id = "scan-" + path
-        AppModel.shared.dialogs.present(id: id) { ScanDialog(id: id, path: path) }
+        chooseFolder(title: tr("import.scan")) { path in
+            let id = "scan-" + path
+            AppModel.shared.dialogs.present(id: id) { ScanDialog(id: id, path: path) }
+        }
     }
 }
 
@@ -101,14 +98,14 @@ struct ImportPreviewDialog: View {
     }
 
     private func load() async {
-        name = URL(fileURLWithPath: path).lastPathComponent
+        name = AppModel.shared.serverPath.lastComponent(path)
         defer { loading = false }
         guard let api = AppModel.shared.api else { return }
         // maxDepth 0 时，所选文件夹不是工程会返回它下面的工程
         if let list = try? await api.scan(path: path, maxDepth: 0) {
-            let normalized = (path as NSString).standardizingPath
-            entry = list.first { ($0.path as NSString).standardizingPath == normalized }
-            children = list.filter { ($0.path as NSString).standardizingPath != normalized }.count
+            let sp = AppModel.shared.serverPath
+            entry = list.first { sp.same($0.path, path) }
+            children = list.filter { !sp.same($0.path, path) }.count
             if let n = entry?.name, !n.isEmpty { name = n }
         }
     }
@@ -124,8 +121,8 @@ struct ImportPreviewDialog: View {
     /// 这个文件夹现在是否已经是工程（导入请求出错后核实用）
     private func importedProjectId() async -> String? {
         guard let list = try? await AppModel.shared.client().scan(path: path, maxDepth: 0) else { return nil }
-        let normalized = (path as NSString).standardizingPath
-        guard let e = list.first(where: { ($0.path as NSString).standardizingPath == normalized }), e.imported else { return nil }
+        let sp = AppModel.shared.serverPath
+        guard let e = list.first(where: { sp.same($0.path, path) }), e.imported else { return nil }
         return e.projectId
     }
 
@@ -277,8 +274,9 @@ struct ScanDialog: View {
                 // 同单个导入：先核实哪些其实已经导入了。全部已导入按成功处理；否则刷新列表（已导入的会标出来）再报错
                 let message = error.localizedDescription
                 let fresh = (try? await AppModel.shared.client().scan(path: path, maxDepth: depth)) ?? []
-                let done = Set(fresh.filter(\.imported).map { ($0.path as NSString).standardizingPath })
-                let all = paths.allSatisfy { done.contains(($0 as NSString).standardizingPath) }
+                let sp = AppModel.shared.serverPath
+                let done = Set(fresh.filter(\.imported).map { sp.normalize($0.path) })
+                let all = paths.allSatisfy { done.contains(sp.normalize($0)) }
                 if all {
                     close()
                     AppModel.shared.nav.page = .workspace(workspaceId)

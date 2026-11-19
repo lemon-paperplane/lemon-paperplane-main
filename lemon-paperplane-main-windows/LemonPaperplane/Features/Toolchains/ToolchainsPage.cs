@@ -155,7 +155,10 @@ internal sealed class ToolchainKindSection : PPView
             !string.IsNullOrEmpty(tc.Arch) ? new PPBadge(tc.Arch!, mono: true) : null,
             tc.Managed ? new PPBadge(L.T("toolchain.managed"), tone: "info") : null,
             !string.IsNullOrEmpty(tc.Source) && !tc.Managed ? new PPBadge(tc.Source!) : null);
-        var info = VStack(2, title, new PPLink(Format.AbbreviatePath(tc.Path), () => Actions.RevealInExplorer(tc.Path), mono: true).Left());
+        FrameworkElement pathEl = Actions.LocalOnlyAvailable
+            ? new PPLink(Format.AbbreviatePath(tc.Path), () => Actions.RevealInExplorer(tc.Path), mono: true).Left()
+            : TextMiddle(Format.AbbreviatePath(tc.Path), Typo.MonoSmall, ColorToken.TextSecondary).Tip(tc.Path).Left();
+        var info = VStack(2, title, pathEl);
         var row = HStack(M.Md,
             info.Shrink(),
             Spacer(M.Md),
@@ -174,12 +177,14 @@ internal sealed class ToolchainKindSection : PPView
     private void AddPath()
     {
         var kind = _kind.Kind;
-        if (ImportFlow.ChooseFolder(L.T("toolchain.addPath")) is not { } path) return;
-        AppModel.Shared.Perform(L.T("toolchain.addPath"), async api =>
+        void Add(string path) => AppModel.Shared.Perform(L.T("toolchain.addPath"), async api =>
         {
             await api.AddToolchainAsync(kind, path);
             await AppModel.Shared.ReloadToolchains();
         });
+        // 连着远程服务器时选服务器上的安装目录或可执行文件（同 Mac）
+        if (AppModel.Shared.IsRemote) ServerFiles.ChooseRemoteAny(L.T("toolchain.addPath"), null, Add);
+        else ServerFiles.ChooseFolder(L.T("toolchain.addPath"), null, Add);
     }
 }
 

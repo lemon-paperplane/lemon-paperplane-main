@@ -211,7 +211,9 @@ private struct TerminalRow: View {
         let t = terminal
         var out: [MenuEntry] = [.item(tr("terminal.rename"), icon: "pencil") { Actions.renameTerminal(t) }]
         if t.exited { out.append(.item(tr("terminal.restart"), icon: "rotate-ccw") { Actions.restartTerminal(t) }) }
-        out.append(.item(tr("terminal.reveal"), icon: "folder-open") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: t.cwd)]) })
+        if !Actions.isRemote {
+            out.append(.item(tr("terminal.reveal"), icon: "folder-open") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: t.cwd)]) })
+        }
         out.append(.divider)
         out.append(.item(tr("terminal.close"), icon: "trash-2", destructive: true) { Actions.closeTerminal(t) })
         return out

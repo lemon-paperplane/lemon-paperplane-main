@@ -19,9 +19,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
-    <Compile Include="..\build\Polyfills.cs" Link="Polyfills.cs" />
+    <Compile Include="..\build\Polyfills.cs">
+      <Link>Polyfills.cs</Link>
+    </Compile>
     <!-- 夹具直接用 Mac 版的（真实 daemon 抓的 JSON） -->
-    <None Include="..\..\lemon-paperplane-main-macos\PaperplaneKit\Tests\PaperplaneKitTests\Fixtures\**\*.*" Link="Fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\lemon-paperplane-main-macos\PaperplaneKit\Tests\PaperplaneKitTests\Fixtures\**\*.*">
+      <Link>Fixtures\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PaperplaneKit\PaperplaneKit.csproj">

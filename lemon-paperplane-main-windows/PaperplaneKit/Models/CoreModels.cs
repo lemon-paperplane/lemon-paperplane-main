@@ -33,6 +33,8 @@ public sealed record Project
     public DateTimeOffset? ImportedAt { get; set; }
     public DateTimeOffset? AnalyzedAt { get; set; }
     public string? DefaultConfigId { get; set; }
+    /// <summary>连接远程服务器时运行地址的打开方式（运行配置 id → 设置）；没有记录的配置两种都要</summary>
+    public Dictionary<string, RemoteLinks> RemoteLinks { get; set; } = new();
 
     /// <summary>全部运行配置（按模块顺序）</summary>
     public List<RunConfig> AllRunConfigs => Modules.SelectMany(m => m.RunConfigs).ToList();
@@ -190,6 +192,11 @@ public sealed record ProjectSummary
     public string? Busy { get; set; }
     /// <summary>最近一次结束的运行（卡片「未运行 · 上次运行 3 小时前」）。</summary>
     public LastRun? LastRun { get; set; }
+    /// <summary>连接远程服务器时运行地址的打开方式（运行配置 id → 设置）；没有记录的配置两种都要</summary>
+    public Dictionary<string, RemoteLinks> RemoteLinks { get; set; } = new();
+
+    /// <summary>某个运行配置的远程访问方式（没有记录时两种都要）</summary>
+    public RemoteLinks LinksOf(string configId) => RemoteLinks.TryGetValue(configId, out var l) ? l : new RemoteLinks();
 
     /// <summary>是否有运行中（含启动中、准备中、停止中）的运行</summary>
     public bool HasActiveRun => Runs.Any(r => RunState.IsActive(r.State));
@@ -597,6 +604,17 @@ public sealed record SystemInfo
     public int Plugins { get; set; }
     public List<string>? PluginErrors { get; set; }
     public List<string>? PluginDirs { get; set; }
+    /// <summary>主机名（切换服务器时显示）</summary>
+    public string Hostname { get; set; } = "";
+    /// <summary>用户主目录（远程选择文件夹从这里开始）</summary>
+    public string Home { get; set; } = "";
+    /// <summary>服务器的路径分隔符：拼服务器路径时用它，不用本机的（旧内核没有这个字段时按 Windows）</summary>
+    public string PathSeparator { get; set; } = "";
+    /// <summary>远程协议版本</summary>
+    public int ApiVersion { get; set; }
+
+    /// <summary>路径分隔符（缺省时按操作系统推断）</summary>
+    public string Separator => PathSeparator.Length > 0 ? PathSeparator : Os == "windows" || Os.Length == 0 ? "\\" : "/";
 }
 
 // MARK: - 各操作的专用输出

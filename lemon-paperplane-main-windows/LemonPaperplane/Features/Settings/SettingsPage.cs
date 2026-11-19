@@ -44,12 +44,17 @@ public sealed class SettingsPage : PPView
         if (_loaded) return;
         _loaded = true;
         try { _mirrors.Value = await api.MirrorsStatusAsync(); } catch { }
-        try { _mcp.Value = await api.McpConfigAsync(); } catch { }
+        if (!_model.IsRemote)
+        {
+            try { _mcp.Value = await api.McpConfigAsync(); } catch { }
+        }
     }
 
     protected override UIElement Build()
     {
-        var col = VStack(M.Xxl, General(), MirrorSection(), Automation(), Keep("editor", () => new EditorSettingsSection()), ApiSection(), About());
+        // API 与 MCP、命令行工具是本机的：连着远程服务器时不显示（同 Mac）
+        var col = VStack(M.Xxl, General(), Keep("servers", () => new SavedServersSection()), Keep("host", () => new HostSection()), MirrorSection(), Automation(),
+            Keep("editor", () => new EditorSettingsSection()), _model.IsRemote ? null : ApiSection(), About());
         foreach (var v in _data.Contributions.ViewsAt(ViewLocation.Settings))
         {
             var view = v;
@@ -78,34 +83,38 @@ public sealed class SettingsPage : PPView
         _ => L.T("settings.terminal.auto"),
     };
 
+    /// <summary>界面偏好（语言、主题）：总是本机的设置，连着远程服务器时也不改服务器的。</summary>
+    private AppSettings Ui => _model.UiSettings ?? S;
+
     private UIElement General()
     {
-        var s = S;
         var language = new PPDropdown<string>(new[]
         {
             new DropdownOption<string>("system", L.T("settings.followSystem")),
             new DropdownOption<string>("zh-Hans", "中文"),
             new DropdownOption<string>("en", "English"),
-        }, Bind.Of(() => string.IsNullOrEmpty(S.Locale) ? "system" : S.Locale, v =>
+        }, Bind.Of(() => _model.IsRemote ? L10n.Shared.Setting : string.IsNullOrEmpty(Ui.Locale) ? "system" : Ui.Locale, v =>
         {
             L10n.Shared.Apply(v);
-            Update(x => x with { Locale = v }, ("locale", v));
+            UpdateUi(x => x with { Locale = v }, ("locale", v));
         }), minWidth: 180).Id("settings.language");
         var theme = new PPSegmented<string>(new[] { ("system", L.T("settings.followSystem")), ("light", L.T("settings.light")), ("dark", L.T("settings.dark")) },
-            Bind.Of(() => string.IsNullOrEmpty(S.Theme) ? "system" : S.Theme, v =>
+            Bind.Of(() => string.IsNullOrEmpty(Ui.Theme) ? "system" : Ui.Theme, v =>
             {
                 Theme.Apply(v);
                 UiPrefs.Set("Theme", v);
-                Update(x => x with { Theme = v }, ("theme", v));
+                UpdateUi(x => x with { Theme = v }, ("theme", v));
             })).Id("settings.theme");
         var terminal = new PPDropdown<string>(Terminals.Select(t => new DropdownOption<string>(t, TerminalTitle(t))),
             Bind.Of(() => Terminals.Contains(S.Terminal ?? "") ? S.Terminal ?? "" : "", v => Update(x => x with { Terminal = v }, ("terminal", v))),
             minWidth: 180).Id("settings.terminal");
+        // 终端程序只用于在本机打开终端（远程时那些入口都隐藏了）
         return Section(L.T("settings.general"), null,
             SettingRow(L.T("settings.language"), language),
             SettingRow(L.T("settings.theme"), theme),
-            SettingRow(L.T("settings.terminal"), terminal));
+            _model.IsRemote ? null : SettingRow(L.T("settings.terminal"), terminal));
     }
+
 
     // MARK: 镜像
 
@@ -200,7 +209,8 @@ public sealed class SettingsPage : PPView
             SettingRow(L.T("settings.token"), token),
             SettingRow(L.T("settings.claudeCode"), claudeCode),
             SettingRow(L.T("settings.claudeDesktop"), desktop),
-            SettingRow(L.T("settings.cli"), cli, L.T("settings.cli.info")));
+            // 安装命令行工具是改本机的 PATH：连着远程服务器时隐藏
+            Actions.LocalOnlyAvailable ? SettingRow(L.T("settings.cli"), cli, L.T("settings.cli.info")) : null);
     }
 
     private static UIElement Copyable(string text) =>
@@ -238,6 +248,24 @@ public sealed class SettingsPage : PPView
     }
 
     // MARK: 保存
+
+    /// <summary>改界面偏好（语言、主题）：写本机内核的设置（远程时不动服务器的）。</summary>
+    private void UpdateUi(Func<AppSettings, AppSettings> local, (string Key, object? Value) patch)
+    {
+        if (!_model.IsRemote)
+        {
+            Update(local, patch);
+            return;
+        }
+        var body = Json.Object(patch);
+        _ = Run();
+        async System.Threading.Tasks.Task Run()
+        {
+            try { await _model.UpdateUiSettings(body); }
+            catch (Exception e) { _model.Toasts.Error(e, L.T("settings.saveFailed")); }
+            Invalidate();
+        }
+    }
 
     /// <summary>改设置：先本地生效（避免控件回跳），再 settings.update，结果以内核为准。</summary>
     private void Update(Func<AppSettings, AppSettings> local, (string Key, object? Value) patch)

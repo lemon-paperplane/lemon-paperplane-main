@@ -227,7 +227,7 @@ public sealed class NavStore : PPObservable
         get => _page;
         set
         {
-            if (value.IsWorkspace && value.Id != null) UiPrefs.Set("LastWorkspace", value.Id);
+            if (value.IsWorkspace && value.Id != null) UiPrefs.Set(LastWorkspaceKey, value.Id);
             var changed = _page != value;
             _page = value;
             _openProjectId = null;
@@ -258,7 +258,10 @@ public sealed class NavStore : PPObservable
     /// <summary>当前可见的控制台数量（Ctrl+F 判断去向）。控制台出现时加一、消失时减一。</summary>
     public int VisibleConsoles { get; set; }
 
-    public string? LastWorkspaceId => UiPrefs.Get("LastWorkspace");
+    public string? LastWorkspaceId => UiPrefs.Get(LastWorkspaceKey);
+
+    /// <summary>上次的工作区按服务器分别记（本机沿用原来的键）。</summary>
+    private static string LastWorkspaceKey => AppModel.Shared.Server is { } s ? "LastWorkspace:" + s.Id : "LastWorkspace";
 
     public string? CurrentWorkspaceId => _page.IsWorkspace ? _page.Id : null;
 

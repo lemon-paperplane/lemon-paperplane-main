@@ -118,8 +118,20 @@ public sealed partial class ApiClient
         using var req = AuthorizedRequest("/api/v1/call/" + op, HttpMethod.Post);
         req.Content = new StringContent(body, new UTF8Encoding(false), "application/json");
         var (data, status) = await PerformAsync(req, timeout ?? Timeout, ct).ConfigureAwait(false);
-        return DecodeEnvelope<T>(data, status);
+        try
+        {
+            return DecodeEnvelope<T>(data, status);
+        }
+        catch (ApiException e) when (e.Code == "remote_unauthorized")
+        {
+            // 经网关调用时远程服务器拒绝了访问密钥（被吊销）：通知界面进入「连不上」状态（已建立的事件流不一定会断）
+            RemoteRejected?.Invoke(this, e);
+            throw;
+        }
     }
+
+    /// <summary>经网关的调用被远程服务器拒绝了访问密钥（403 remote_unauthorized）。在调用线程上触发。</summary>
+    public static event Action<ApiClient, ApiException>? RemoteRejected;
 
     /// <summary>调用但不关心输出。</summary>
     public Task SendAsync(string op, object? input = null, TimeSpan? timeout = null, CancellationToken ct = default) =>

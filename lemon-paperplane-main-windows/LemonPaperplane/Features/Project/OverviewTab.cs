@@ -103,9 +103,11 @@ public sealed class OverviewTab : PPView
             module.RelDir.Length > 0 ? Text(module.RelDir, Typo.MonoSmall, ColorToken.TextTertiary) : null,
             Spacer(),
             module.NeedsSync && !module.Synced ? new PPButton(L.T("project.sync"), () => Actions.Sync(project.Id, module.Id), icon: "refresh-cw", size: PPButtonSize.Small) : null,
-            new PPMenuButton(() => Actions.OpenWithEntries(project.Id, module.Id),
-                Box(new PPIcon("ellipsis", M.Icon, ColorToken.IconSecondary).Center()).Size(M.IconButtonSmall, M.IconButtonSmall).Bg(ColorToken.Clear),
-                PopupAlignment.Trailing, L.T("common.more")));
+            Actions.LocalOnlyAvailable
+                ? new PPMenuButton(() => Actions.OpenWithEntries(project.Id, module.Id),
+                    Box(new PPIcon("ellipsis", M.Icon, ColorToken.IconSecondary).Center()).Size(M.IconButtonSmall, M.IconButtonSmall).Bg(ColorToken.Clear),
+                    PopupAlignment.Trailing, L.T("common.more"))
+                : null);
         var col = VStack(M.Md, header);
         col.Align = CrossAlign.Stretch;
         if (module.Facets.Count > 0)

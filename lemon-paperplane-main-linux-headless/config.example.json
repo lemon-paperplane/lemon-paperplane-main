@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "listen": "0.0.0.0:47290",
+  "passwordLogin": false,
+  "allowCIDRs": [],
+  "tlsCert": "",
+  "tlsKey": "",
+  "users": [
+    { "name": "admin", "password": "至少 10 位，启动时会自动换成哈希并从这里删掉" }
+  ]
+}

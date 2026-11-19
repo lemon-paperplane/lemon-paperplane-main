@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
@@ -286,12 +287,28 @@ public sealed partial class ApiClient
         return CallAsync<ViewRenderResult>("view.render", input);
     }
 
-    /// <summary>webview 视图：view.render 不调插件，直接返回 {"webviewUrl": "..."}（docs/api.md 第 6 节）</summary>
+    /// <summary>
+    /// webview 视图：view.render 不调插件，直接返回 {"webviewUrl": "..."}（docs/api.md 第 6 节）。
+    /// 远程服务器给的是相对路径（/plugins/…，不带服务器的令牌），本机给的是带令牌的绝对地址：统一换成本客户端的地址与令牌（同 Mac）。
+    /// </summary>
     public async Task<Uri?> WebviewURLAsync(ViewContext ctx)
     {
         var r = await CallAsync<JToken>("view.render", ctx.Input).ConfigureAwait(false);
         var s = r.Get("webviewUrl").StringValue();
-        return s != null && Uri.TryCreate(s, UriKind.Absolute, out var u) ? u : null;
+        return string.IsNullOrEmpty(s) ? null : RebasedWebviewUrl(s!);
+    }
+
+    /// <summary>webview 地址：scheme/host/port 换成本客户端的 base（远程时是网关端口），去掉原有 token 参数再加上当前令牌。</summary>
+    public Uri? RebasedWebviewUrl(string raw)
+    {
+        Uri? u;
+        if (raw.StartsWith("/", StringComparison.Ordinal)) u = new Uri(BaseUrl, raw);
+        else if (!Uri.TryCreate(raw, UriKind.Absolute, out u)) return null;
+        var b = new UriBuilder(u) { Scheme = BaseUrl.Scheme, Host = BaseUrl.Host, Port = BaseUrl.Port };
+        var items = b.Query.TrimStart('?').Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(q => !q.StartsWith("token=", StringComparison.Ordinal) && q != "token");
+        b.Query = string.Join("&", new[] { "token=" + Uri.EscapeDataString(Token) }.Concat(items));
+        return b.Uri;
     }
 
     public Task<ViewEventResult> ViewEventAsync(ViewContext ctx, string @event, IDictionary<string, JToken> values,

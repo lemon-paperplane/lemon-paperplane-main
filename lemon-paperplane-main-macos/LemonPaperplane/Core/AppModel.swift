@@ -15,11 +15,18 @@ final class AppModel: ObservableObject {
         case failed(String)
     }
 
+    /// 本机内核与事件流的连接状态（远程服务器连不上另见 servers.phase）
     @Published private(set) var connection: Connection = .connecting
+    /// 当前服务器的 system.info
     @Published private(set) var systemInfo: SystemInfo?
 
+    /// 当前服务器的接口：本机时是本机内核，远程时是本机内核里的网关端口（形式一样）
     private(set) var api: APIClient?
+    /// 本机内核（网关在它里面）：连着远程服务器时也保留，gateway.* 与「退出并停止全部服务」用它
+    private(set) var localAPI: APIClient?
+    private(set) var localInfo: SystemInfo?
 
+    let servers = ServerStore()
     let data = DataStore()
     let runs = RunStore()
     let terminals = TerminalStore()
@@ -33,8 +40,14 @@ final class AppModel: ObservableObject {
     /// 本界面发起的任务：结束时给出提示
     private var trackedTasks: Set<String> = []
     private var started = false
+    /// 每次切换服务器 +1：切换前发出的请求回来时已过期，丢弃结果
+    private var generation = 0
+    /// 本界面开着的网关（换服务器或换密钥后关掉旧的，连同它的端口转发）
+    private var openedGatewayId: String?
 
-    private init() {}
+    private init() {
+        nav.serverKey = servers.currentId ?? ""
+    }
 
     // MARK: 连接
 
@@ -45,23 +58,141 @@ final class AppModel: ObservableObject {
         connect()
     }
 
+    /// 连上本机内核（必要时拉起），再按记住的服务器接上本机或远程
     func connect() {
         connection = .connecting
         Task {
             do {
                 let (client, info) = try await daemon.connect(locale: L10n.shared.systemLocale)
-                api = client
-                systemInfo = info
-                connection = .connected
+                localAPI = client
+                localInfo = info
                 if info.plugins == 0 {
                     toasts.show("danger", tr("app.noPlugins"), message: info.executable)
                 }
-                startEvents(client)
-                await refreshAll()
+                await activateCurrent()
             } catch {
                 connection = .failed(error.localizedDescription)
             }
         }
+    }
+
+    // MARK: 服务器
+
+    /// 当前服务器的路径规则（Mac 连 Windows 服务器时是 C:\…）
+    var serverPath: ServerPath { Format.serverPath }
+    var isRemote: Bool { servers.isRemote }
+
+    /// 切换到某台服务器（nil = 本机）：所有数据重新加载。没能切换（本机内核没连上、编辑窗口有未保存）时返回 false
+    @discardableResult
+    func switchServer(to id: String?) -> Bool {
+        if id == servers.currentId, servers.phase == .ready, api != nil { return true }
+        if id != nil, localAPI == nil {
+            toasts.show("warning", tr("server.localRequired"))
+            return false
+        }
+        // 编辑窗口打开的是这台服务器上的文件：有未保存的先让它们提示，不切换
+        guard EditorWindows.shared.prepareForQuit() else {
+            toasts.show("warning", tr("editorWindow.unsaved"))
+            return false
+        }
+        servers.setCurrent(id)
+        resetForServerSwitch()
+        Task { await activateCurrent() }
+        return true
+    }
+
+    /// 重试连接当前服务器（连不上页面的「重试」）
+    func reconnectServer() {
+        guard localAPI != nil else { connect(); return }
+        Task { await activateCurrent() }
+    }
+
+    /// 换服务器前清掉上一台的数据与界面状态
+    private func resetForServerSwitch() {
+        generation += 1
+        events.stop()
+        api = nil
+        servers.gatewayId = nil
+        trackedTasks.removeAll()
+        PopupController.shared.dismissAll()
+        dialogs.dismissAll()
+        data.reset()
+        runs.reset()
+        terminals.reset()
+        ResourceStore.shared.reset()
+        IconStore.shared.clearPluginIcons()
+        nav.serverKey = servers.currentId ?? ""
+        nav.resetForServerSwitch()
+    }
+
+    /// 按 servers.currentId 接上（本机：直接用本机内核；远程：本机内核 gateway.open）
+    private func activateCurrent() async {
+        generation += 1
+        let gen = generation
+        events.stop()
+        if let s = servers.current {
+            await openRemote(s, gen: gen)
+            return
+        }
+        guard let local = localAPI else { return }
+        closeOpenedGateway(except: nil)
+        servers.phase = .ready
+        servers.gatewayId = nil
+        use(local, info: localInfo)
+        connection = .connected
+        startEvents(local)
+        await refreshAll()
+    }
+
+    private func openRemote(_ s: SavedServer, gen: Int) async {
+        servers.phase = .connecting
+        api = nil
+        guard let local = localAPI else {
+            servers.phase = .failed(ServerFailure(kind: .localDown))
+            return
+        }
+        guard let token = servers.token(s.id), !token.isEmpty else {
+            servers.phase = .failed(ServerFailure(kind: .unauthorized))
+            return
+        }
+        do {
+            let gw = try await local.gatewayOpen(url: s.url, fingerprint: s.fingerprint, trusted: s.trusted, token: token)
+            guard gen == generation else { return }
+            closeOpenedGateway(except: gw.id)
+            openedGatewayId = gw.id
+            servers.gatewayId = gw.id
+            let client = APIClient(baseURL: gw.baseURL, token: gw.token)
+            use(client, info: gw.info)
+            if let i = gw.info { servers.updateInfo(s.id, os: i.os, hostname: i.hostname) }
+            servers.phase = .ready
+            connection = .connected
+            startEvents(client)
+            await refreshAll()
+        } catch {
+            guard gen == generation else { return }
+            servers.phase = .failed(ServerFailure(error))
+        }
+    }
+
+    private func closeOpenedGateway(except keep: String?) {
+        guard let old = openedGatewayId, old != keep else { return }
+        openedGatewayId = nil
+        guard let local = localAPI else { return }
+        Task { try? await local.gatewayClose(old) }
+    }
+
+    private func use(_ client: APIClient, info: SystemInfo?) {
+        api = client
+        systemInfo = info
+        applyPathRules(info)
+    }
+
+    /// 路径缩写与拼接按当前服务器（system.info 的 home、pathSeparator）
+    private func applyPathRules(_ info: SystemInfo?) {
+        let home = info?.home ?? ""
+        Format.serverHome = home.isEmpty ? (isRemote ? "" : NSHomeDirectory()) : home
+        let sep = info?.pathSeparator ?? ""
+        Format.serverPath = ServerPath(sep: sep.isEmpty ? "/" : sep)
     }
 
     /// 需要已连接的 API；没连上时抛出可展示的错误
@@ -71,8 +202,13 @@ final class AppModel: ObservableObject {
     }
 
     private func startEvents(_ client: APIClient) {
+        let gen = generation
         events.start(client: client) { [weak self] update in
-            Task { @MainActor in self?.handle(update) }
+            Task { @MainActor in
+                // 换了服务器后，上一台事件流里还没处理完的消息丢弃
+                guard let self, gen == self.generation else { return }
+                self.handle(update)
+            }
         }
     }
 
@@ -80,6 +216,8 @@ final class AppModel: ObservableObject {
         switch update {
         case .connected:
             if connection != .connected { connection = .connected }
+            // 远程服务器恢复（事件流经网关重新连上）
+            if case .failed = servers.phase, api != nil { servers.phase = .ready }
         case .disconnected:
             if connection == .connected { connection = .reconnecting }
             scheduleRecovery()
@@ -94,22 +232,76 @@ final class AppModel: ObservableObject {
     private func scheduleRecovery() {
         guard !recovering else { return }
         recovering = true
+        let gen = generation
         Task {
             defer { recovering = false }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard connection != .connected else { return }
+            guard connection != .connected, gen == generation else { return }
+            if servers.isRemote {
+                await recoverRemote(gen: gen)
+                return
+            }
             guard let (client, info) = try? await daemon.connect(locale: L10n.shared.systemLocale) else { return }
-            if client.baseURL != api?.baseURL || client.token != api?.token {
-                api = client
-                systemInfo = info
+            guard gen == generation else { return }
+            if client.baseURL != localAPI?.baseURL || client.token != localAPI?.token {
+                localAPI = client
+                localInfo = info
+                use(client, info: info)
                 startEvents(client)
             }
         }
     }
 
+    /// 连着远程服务器时事件流断了：先看本机内核（网关在它里面），再经网关问服务器。
+    /// 经网关收到 403 remote_unauthorized / 502 是服务器那一侧的问题，不能当成本机令牌失效去重启本机内核。
+    private func recoverRemote(gen: Int) async {
+        var localRestarted = false
+        if let local = localAPI, (try? await local.systemInfo(timeout: 3)) != nil {
+            // 本机内核正常
+        } else if let (client, info) = try? await daemon.connect(locale: L10n.shared.systemLocale) {
+            localRestarted = client.baseURL != localAPI?.baseURL || client.token != localAPI?.token
+            if localRestarted { openedGatewayId = nil }
+            localAPI = client
+            localInfo = info
+        } else {
+            guard gen == generation else { return }
+            servers.phase = .failed(ServerFailure(kind: .localDown))
+            return
+        }
+        guard gen == generation, let s = servers.current else { return }
+        // 本机内核重启过：网关跟着没了，重新 open
+        if localRestarted {
+            await reopenRemote(s)
+            return
+        }
+        guard let api else { return }
+        do {
+            _ = try await api.systemInfo(timeout: 10)
+            // 通了：事件流自己会重连
+        } catch let e as APIError {
+            guard gen == generation else { return }
+            if e.code == APIError.codeNetwork || e.code == APIError.codeUnauthorized {
+                // 网关端口没了（被关掉）或本机令牌对不上：重新 open 一个
+                await reopenRemote(s)
+            } else if e.isRemoteFailure {
+                servers.phase = .failed(ServerFailure(e))
+                // 密钥被吊销：不再重试，等用户重新登录
+                if e.code == APIError.codeRemoteUnauthorized { events.stop() }
+            }
+        } catch {}
+    }
+
+    private func reopenRemote(_ s: SavedServer) async {
+        generation += 1
+        let gen = generation
+        events.stop()
+        await openRemote(s, gen: gen)
+    }
+
     /// 重新拉取全部状态（启动、重连后的 hello）
     func refreshAll() async {
         guard let api else { return }
+        let gen = generation
         async let ws = try? api.workspaces()
         async let ps = try? api.projects()
         async let rs = try? api.runs()
@@ -122,17 +314,20 @@ final class AppModel: ObservableObject {
         async let prompts = try? api.pendingPrompts()
         async let terms = try? api.terminalList()
 
-        if let ws = await ws { data.applyWorkspaces(ws) }
-        if let ps = await ps { data.projects = Dictionary(ps.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
-        if let rs = await rs { runs.runs = Dictionary(rs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
-        if let ts = await ts { runs.tasks = Dictionary(ts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
-        if let st = await st { applySettings(st) }
-        if let cs = await cs { data.contributions = cs }
-        if let pl = await pl { setPlugins(pl) }
-        if let k = await kinds { data.toolchainKinds = k }
-        if let t = await tcs { data.toolchains = t }
-        if let prompts = await prompts { for p in prompts { PromptPresenter.present(p) } }
-        if let terms = await terms { terminals.list = terms }
+        let r = await (ws, ps, rs, ts, st, cs, pl, kinds, tcs, prompts, terms)
+        // 等结果期间换了服务器：这批数据属于上一台，丢弃
+        guard gen == generation, api === self.api else { return }
+        if let ws = r.0 { data.applyWorkspaces(ws) }
+        if let ps = r.1 { data.projects = Dictionary(ps.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
+        if let rs = r.2 { runs.runs = Dictionary(rs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
+        if let ts = r.3 { runs.tasks = Dictionary(ts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) }
+        if let st = r.4 { applySettings(st) }
+        if let cs = r.5 { data.contributions = cs }
+        if let pl = r.6 { setPlugins(pl) }
+        if let k = r.7 { data.toolchainKinds = k }
+        if let t = r.8 { data.toolchains = t }
+        if let prompts = r.9 { for p in prompts { PromptPresenter.present(p) } }
+        if let terms = r.10 { terminals.list = terms }
         data.loaded = true
         fixNavigation()
     }
@@ -158,12 +353,17 @@ final class AppModel: ObservableObject {
 
     func applySettings(_ s: AppSettings) {
         data.settings = s
+        // 界面语言与主题跟着本机走：远程服务器的设置不改本机界面
+        guard !isRemote else { return }
         L10n.shared.apply(setting: s.locale)
         UserDefaults.standard.set(s.theme, forKey: "PaperplaneTheme")
         Appearance.apply(s.theme)
     }
 
-    func updateSystemInfo(_ i: SystemInfo) { systemInfo = i }
+    func updateSystemInfo(_ i: SystemInfo) {
+        systemInfo = i
+        if !isRemote { localInfo = i }
+    }
 
     func reloadToolchains() async {
         guard let api else { return }
@@ -184,7 +384,11 @@ final class AppModel: ObservableObject {
         bus.raw.send(e)
         switch e.type {
         case EventType.hello:
-            if let info = try? e.decode(SystemInfo.self) { systemInfo = info }
+            if let info = try? e.decode(SystemInfo.self) {
+                systemInfo = info
+                applyPathRules(info)
+                if !isRemote { localInfo = info }
+            }
             connection = .connected
             Task { await refreshAll() }
         case EventType.workspaces:
@@ -301,9 +505,13 @@ final class AppModel: ObservableObject {
             return
         }
         events.stop()
-        guard stopServices, let api else { NSApp.terminate(nil); return }
+        let gateway = openedGatewayId
+        let local = localAPI
         Task {
-            try? await api.shutdown(stopRuns: true)
+            // 关掉本界面开的网关（连同端口转发）；本机内核卡住时不等
+            if let gateway, let local { try? await local.send("gateway.close", ["id": .string(gateway)], timeout: 2) }
+            // 只停本机：远程服务器上的服务不受界面退出影响（远程也不允许调 system.shutdown）
+            if stopServices, let local { try? await local.shutdown(stopRuns: true) }
             NSApp.terminate(nil)
         }
     }

@@ -90,11 +90,13 @@ struct ModuleCard: View {
                     if module.needsSync && !module.synced {
                         PPButton(tr("project.sync"), icon: "refresh-cw", size: .small) { Actions.sync(project.id, moduleId: module.id) }
                     }
-                    PPMenuButton(alignment: .trailing, entries: {
-                        Actions.openWithEntries(project.id, moduleId: module.id)
-                    }) {
-                        PPIcon("ellipsis", size: M.icon, color: theme.iconSecondary)
-                            .frame(width: M.iconButtonSmall, height: M.iconButtonSmall).contentShape(Rectangle())
+                    if !Actions.isRemote {
+                        PPMenuButton(alignment: .trailing, entries: {
+                            Actions.openWithEntries(project.id, moduleId: module.id)
+                        }) {
+                            PPIcon("ellipsis", size: M.icon, color: theme.iconSecondary)
+                                .frame(width: M.iconButtonSmall, height: M.iconButtonSmall).contentShape(Rectangle())
+                        }
                     }
                 }
                 if !module.facets.isEmpty {

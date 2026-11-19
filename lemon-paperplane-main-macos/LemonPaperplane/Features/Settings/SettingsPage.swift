@@ -10,6 +10,10 @@ struct SettingsPage: View {
     @State private var mirrors: MirrorStatus?
     @State private var probing = false
     @State private var mcp: MCPConfig?
+    @ObservedObject private var nav = AppModel.shared.nav
+    @ObservedObject private var servers = AppModel.shared.servers
+    /// 界面主题跟着本机走（连着远程服务器时也是）
+    @AppStorage("PaperplaneTheme") private var localTheme = "system"
     @Environment(\.theme) private var theme
 
     private var s: AppSettings { data.settings ?? AppSettings() }
@@ -18,30 +22,45 @@ struct SettingsPage: View {
         VStack(spacing: 0) {
             PPPageHeader(title: tr("sidebar.settings")) { EmptyView() }
             PPDivider(subtle: true)
-            ScrollView {
-                VStack(alignment: .leading, spacing: M.xxl) {
-                    general
-                    mirrorSection
-                    automation
-                    EditorSettingsSection()
-                    apiSection
-                    about
-                    ForEach(data.contributions.views(at: ViewLocation.settings)) { v in
-                        PPSection(v.title) {
-                            PPCard { PluginViewHost(view: v, context: ViewContext(plugin: v.plugin, view: v.id), scrolls: false) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: M.xxl) {
+                        general
+                        ServersSettingsSection().id(SettingsAnchor.servers)
+                        HostSettingsSection()
+                        mirrorSection
+                        automation
+                        EditorSettingsSection()
+                        // API 与 MCP、命令行工具是本机的；连着远程服务器时不显示
+                        if !servers.isRemote { apiSection }
+                        about
+                        ForEach(data.contributions.views(at: ViewLocation.settings)) { v in
+                            PPSection(v.title) {
+                                PPCard { PluginViewHost(view: v, context: ViewContext(plugin: v.plugin, view: v.id), scrolls: false) }
+                            }
                         }
                     }
+                    .padding(M.xl)
+                    .frame(maxWidth: 820, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(M.xl)
-                .frame(maxWidth: 820, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .onAppear { scrollToAnchor(proxy) }
+                .onChange(of: nav.settingsAnchor) { _ in scrollToAnchor(proxy) }
             }
         }
-        .task {
+        .task(id: servers.currentId ?? "") {
             if let api = model.api {
                 mirrors = try? await api.mirrorsStatus()
-                mcp = try? await api.mcpConfig()
+                mcp = servers.isRemote ? nil : try? await api.mcpConfig()
             }
+        }
+    }
+
+    private func scrollToAnchor(_ proxy: ScrollViewProxy) {
+        guard let a = nav.settingsAnchor else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.16)) { proxy.scrollTo(a, anchor: .top) }
+            nav.settingsAnchor = nil
         }
     }
 
@@ -54,23 +73,26 @@ struct SettingsPage: View {
                     SettingRow(tr("settings.language")) {
                         PPDropdown(options: [.init(value: "system", title: tr("settings.followSystem")),
                                              .init(value: "zh-Hans", title: "中文"), .init(value: "en", title: "English")],
-                                   selection: Binding(get: { s.locale.isEmpty ? "system" : s.locale }, set: { v in
+                                   selection: Binding(get: { servers.isRemote ? l10n.setting : (s.locale.isEmpty ? "system" : s.locale) }, set: { v in
                                        L10n.shared.apply(setting: v)
                                        update(["locale": .string(v)])
                                    }), minWidth: 180)
                     }
                     SettingRow(tr("settings.theme")) {
                         PPSegmented(options: [("system", tr("settings.followSystem")), ("light", tr("settings.light")), ("dark", tr("settings.dark"))],
-                                    selection: Binding(get: { s.theme.isEmpty ? "system" : s.theme }, set: { v in
+                                    selection: Binding(get: { servers.isRemote ? localTheme : (s.theme.isEmpty ? "system" : s.theme) }, set: { v in
                                         Appearance.apply(v)
-                                        UserDefaults.standard.set(v, forKey: "PaperplaneTheme")
+                                        localTheme = v
                                         update(["theme": .string(v)])
                                     }))
                     }
-                    SettingRow(tr("settings.terminal")) {
-                        PPDropdown(options: ["Terminal", "iTerm", "Warp", "Ghostty"].map { .init(value: $0, title: $0) },
-                                   selection: Binding(get: { s.terminal ?? "Terminal" }, set: { update(["terminal": .string($0)]) }),
-                                   minWidth: 180)
+                    // 用哪个终端 App 打开目录：只对本机有意义
+                    if !servers.isRemote {
+                        SettingRow(tr("settings.terminal")) {
+                            PPDropdown(options: ["Terminal", "iTerm", "Warp", "Ghostty"].map { .init(value: $0, title: $0) },
+                                       selection: Binding(get: { s.terminal ?? "Terminal" }, set: { update(["terminal": .string($0)]) }),
+                                       minWidth: 180)
+                        }
                     }
                 }
             }
@@ -244,6 +266,22 @@ struct SettingsPage: View {
     }
 
     private func update(_ patch: [String: JSONValue]) {
+        // 界面语言与主题是本机的：连着远程服务器时写本机内核的设置，不改那台服务器
+        if servers.isRemote {
+            var local: [String: JSONValue] = [:]
+            var remote = patch
+            for k in ["locale", "theme"] { if let v = patch[k] { local[k] = v; remote.removeValue(forKey: k) } }
+            if !local.isEmpty, let api = model.localAPI {
+                Task { _ = try? await api.updateSettings(.object(local)) }
+            }
+            guard !remote.isEmpty else { return }
+            updateCurrent(remote)
+            return
+        }
+        updateCurrent(patch)
+    }
+
+    private func updateCurrent(_ patch: [String: JSONValue]) {
         if var cur = data.settings {
             // 先本地生效，避免控件回跳
             if let v = patch["locale"]?.stringValue { cur.locale = v }

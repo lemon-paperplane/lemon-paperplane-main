@@ -468,11 +468,12 @@ public static class VCSFileMenu
         }
         e.Add(MenuEntry.Item(L.T("vcs.stash.selected"), () => VCSStashDialogs.PresentNew(repo, paths), icon: "archive", disabled: files.All(f => f.Conflicted)));
         e.Add(MenuEntry.Divider);
-        e.Add(MenuEntry.Item(L.T("vcs.revealInFinder"), () =>
-        {
-            var abs = VCSPath.Join(repo.Root, first.Path);
-            Actions.RevealInExplorer(File.Exists(abs) || Directory.Exists(abs) ? abs : VCSPath.Join(repo.Root, VCSPath.Dir(first.Path)));
-        }, icon: "folder-open"));
+        if (Actions.LocalOnlyAvailable)
+            e.Add(MenuEntry.Item(L.T("vcs.revealInFinder"), () =>
+            {
+                var abs = VCSPath.Join(repo.Root, first.Path);
+                Actions.RevealInExplorer(File.Exists(abs) || Directory.Exists(abs) ? abs : VCSPath.Join(repo.Root, VCSPath.Dir(first.Path)));
+            }, icon: "folder-open"));
         e.Add(MenuEntry.Item(L.T("vcs.copyPath"), () => Actions.Copy(string.Join("\n", paths)), icon: "copy"));
         e.Add(MenuEntry.Item(L.T("vcs.copyAbsolutePath"), () => Actions.Copy(string.Join("\n", paths.Select(p => VCSPath.Join(repo.Root, p)))), icon: "copy"));
         var plugin = VCSPluginActions.Entries(ActionLocation.VcsFileMenu, repo,

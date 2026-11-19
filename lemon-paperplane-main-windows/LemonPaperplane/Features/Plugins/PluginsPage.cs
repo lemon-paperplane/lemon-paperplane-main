@@ -82,10 +82,20 @@ public sealed class PluginsPage : PPView
         return new PPRow(content, selected, () => _selected.Value = id, 48).Id("plugin.row." + p.Id);
     }
 
-    /// <summary>从本地 zip 安装（系统的打开文件对话框）。</summary>
+    /// <summary>从本地 zip 安装（系统的打开文件对话框）；连着远程服务器时插件装在服务器上：选服务器上的插件包或文件夹。</summary>
     private void InstallFromFile()
     {
+        if (AppModel.Shared.IsRemote)
+        {
+            ServerFiles.ChooseRemoteAny(L.T("plugin.installFromFile"), null, Install, new[] { "zip" });
+            return;
+        }
         if (ImportFlow.ChooseFile(L.T("plugin.installFromFile"), new[] { ("ZIP", "*.zip") }) is not { } path) return;
+        Install(path);
+    }
+
+    private void Install(string path)
+    {
         AppModel.Shared.Perform(L.T("plugin.installFailed"), async api =>
         {
             var info = await api.InstallPluginAsync(path);

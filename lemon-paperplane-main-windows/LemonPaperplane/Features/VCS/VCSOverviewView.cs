@@ -392,8 +392,6 @@ internal sealed class VCSOverviewSection : PPView
         var e = new List<MenuEntry>
         {
             MenuEntry.Item(L.T("vcs.overview.openInProject"), () => VCSSession.Of(_entry.ProjectId).Reveal(_entry.Root, VCSPage.Changes), icon: "git-branch"),
-            MenuEntry.Item(L.T("vcs.revealInFinder"), () => Actions.RevealInExplorer(_entry.Root), icon: "folder-open"),
-            MenuEntry.Item(L.T("vcs.overview.openInTerminal"), () => VCSOverviewActions.OpenInTerminal(_entry.Root), icon: "square-terminal"),
             MenuEntry.Item(L.T("vcs.copyRepoPath"), () => Actions.Copy(_entry.Root), icon: "copy"),
             MenuEntry.Divider,
             MenuEntry.Item(L.T("vcs.pull.ellipsis"), () => VCSPullDialog.Present(_repo), icon: "arrow-down-to-line"),
@@ -403,6 +401,13 @@ internal sealed class VCSOverviewSection : PPView
             MenuEntry.Divider,
             MenuEntry.Item(L.T("vcs.overview.discardAll"), () => VCSDiscardDialog.Present(_repo, files, null), icon: "undo-2", destructive: true, disabled: files.Count == 0),
         };
+        // 在资源管理器 / 终端中打开是本机操作：连着远程服务器时隐藏
+        if (Actions.LocalOnlyAvailable)
+            e.InsertRange(1, new[]
+            {
+                MenuEntry.Item(L.T("vcs.revealInFinder"), () => Actions.RevealInExplorer(_entry.Root), icon: "folder-open"),
+                MenuEntry.Item(L.T("vcs.overview.openInTerminal"), () => VCSOverviewActions.OpenInTerminal(_entry.Root), icon: "square-terminal"),
+            });
         var plugin = VCSPluginActions.Entries(ActionLocation.VcsToolbar, _repo, new Dictionary<string, JToken>());
         if (plugin.Count > 0)
         {

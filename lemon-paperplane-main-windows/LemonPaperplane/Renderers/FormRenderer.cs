@@ -294,6 +294,19 @@ internal sealed class FormFieldRow : PPView
         bool folder = key.EndsWith("dir", StringComparison.Ordinal) || key.Contains("directory") || key.Contains("folder")
                       || key == "path" || key.EndsWith("root", StringComparison.Ordinal) || key.EndsWith("home", StringComparison.Ordinal);
         var current = Get().StringValue();
+        void Apply(string chosen)
+        {
+            if (string.IsNullOrEmpty(chosen)) return;
+            Set(JSONValue.Of(chosen));
+            tf.Sync();
+        }
+        if (AppModel.Shared.IsRemote)
+        {
+            // 连着远程服务器：选服务器上的路径，文件或文件夹都行（同 Mac；fs.browse 遇到文件会打开它所在的文件夹）
+            var start = !string.IsNullOrEmpty(current) && ServerFiles.IsAbsolute(current!) ? current : null;
+            ServerFiles.ChooseRemoteAny(Field.Title, start, Apply);
+            return;
+        }
         string? initial = null;
         try
         {
@@ -312,9 +325,7 @@ internal sealed class FormFieldRow : PPView
             if (initial != null) dlg.InitialDirectory = initial;
             chosen = dlg.ShowDialog(Window.GetWindow(this)) == true ? dlg.FileName : null;
         }
-        if (string.IsNullOrEmpty(chosen)) return;
-        Set(JSONValue.Of(chosen));
-        tf.Sync();
+        if (!string.IsNullOrEmpty(chosen)) Apply(chosen!);
     }
 }
 

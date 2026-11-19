@@ -28,13 +28,14 @@ public enum IconSource: Hashable, Sendable {
 }
 
 public enum Format {
-    /// 把用户主目录缩写为 ~
-    public static func abbreviatePath(_ path: String, home: String = NSHomeDirectory()) -> String {
-        guard !home.isEmpty, path.hasPrefix(home) else { return path }
-        let rest = path.dropFirst(home.count)
-        if rest.isEmpty { return "~" }
-        if rest.hasPrefix("/") { return "~" + rest }
-        return path
+    /// 当前服务器的主目录与路径规则（界面切换服务器时设置；本机为 NSHomeDirectory() 与 "/"）。
+    /// 界面上显示的路径都是当前服务器上的，缩写 ~ 要按那台机器的主目录。
+    public static var serverHome: String = NSHomeDirectory()
+    public static var serverPath: ServerPath = .posix
+
+    /// 把用户主目录缩写为 ~（默认按当前服务器）
+    public static func abbreviatePath(_ path: String, home: String? = nil) -> String {
+        serverPath.abbreviate(path, home: home ?? serverHome)
     }
 
     /// 内存：MB → 「512 MB」「1.2 GB」

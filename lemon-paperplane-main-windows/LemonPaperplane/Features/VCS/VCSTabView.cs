@@ -238,10 +238,10 @@ internal sealed class VCSToolbar : PPView
             MenuEntry.Divider,
             MenuEntry.Item(L.T("vcs.changes.stagingArea"), () => _repo.Changes.StagingArea = !_repo.Changes.StagingArea, icon: "layers", @checked: _repo.Changes.StagingArea),
             MenuEntry.Divider,
-            MenuEntry.Item(L.T("vcs.revealRepo"), () => Actions.RevealInExplorer(_repo.Root), icon: "folder-open"),
             MenuEntry.Item(L.T("vcs.copyRepoPath"), () => Actions.Copy(_repo.Root), icon: "copy"),
             MenuEntry.Item(L.T("vcs.clone.ellipsis"), VCSCloneDialog.Present, icon: "download"),
         };
+        if (Actions.LocalOnlyAvailable) e.Insert(e.Count - 2, MenuEntry.Item(L.T("vcs.revealRepo"), () => Actions.RevealInExplorer(_repo.Root), icon: "folder-open"));
         var plugin = VCSPluginActions.Entries(ActionLocation.VcsToolbar, _repo, new Dictionary<string, JToken>());
         if (plugin.Count > 0)
         {

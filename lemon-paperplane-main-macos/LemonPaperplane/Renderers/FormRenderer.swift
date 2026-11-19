@@ -179,11 +179,12 @@ private struct FieldRow: View {
     }
 
     private func choosePath() {
-        let p = NSOpenPanel()
-        p.canChooseFiles = true
-        p.canChooseDirectories = true
-        p.allowsMultipleSelection = false
-        if p.runModal() == .OK, let url = p.url { values[field.key] = .string(url.path) }
+        // 连着远程服务器时选的是服务器上的路径
+        let key = field.key
+        let binding = $values
+        PathPicker.choose(title: field.title, kind: .any, initial: values[key]?.stringValue) { path in
+            binding.wrappedValue[key] = .string(path)
+        }
     }
 }
 

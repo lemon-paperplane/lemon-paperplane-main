@@ -38,6 +38,8 @@ type Project struct {
 	Launch []string `json:"launch,omitempty"`
 	// LaunchAlias 是启动项的别名（运行配置 id → 别名），只在「启动」里显示，不改运行配置本身的名字
 	LaunchAlias map[string]string `json:"launchAlias,omitempty"`
+	// RemoteLinks 是连接远程服务器时运行地址的打开方式（运行配置 id → 设置）；没有的按两种都显示
+	RemoteLinks map[string]RemoteLinks `json:"remoteLinks,omitempty"`
 	// DetectVersion 是识别模块时所用规则的版本；内核的规则升级后，旧版本识别的工程会在后台自动重新识别
 	DetectVersion int `json:"detectVersion,omitempty"`
 	// LastRun 是最近一次结束的运行（卡片「未运行 · 上次运行 3 小时前」用），内核重启后也还在
@@ -147,25 +149,26 @@ type RunConfig struct {
 // 卡片摘要（project.list 返回）
 
 type ProjectSummary struct {
-	ID                string            `json:"id"`
-	Name              string            `json:"name"`
-	Path              string            `json:"path"`
-	WorkspaceID       string            `json:"workspaceId"`
-	Facets            []FacetBadge      `json:"facets"`
-	Info              []sdk.InfoItem    `json:"info,omitempty"`
-	Status            string            `json:"status"` // idle | starting | running | failed | stopping | partial
-	Runs              []RunBrief        `json:"runs,omitempty"`
-	Configs           []ConfigBrief     `json:"configs"`
-	DefaultConfigID   string            `json:"defaultConfigId,omitempty"`
-	Launch            []string          `json:"launch,omitempty"`      // 「启动」面板里的运行配置 id（只含仍存在的）
-	LaunchAlias       map[string]string `json:"launchAlias,omitempty"` // 启动项别名（运行配置 id → 别名）
-	VCS               *VCSBrief         `json:"vcs,omitempty"`
-	Problems          int               `json:"problems"`
-	ProblemSeverity   string            `json:"problemSeverity,omitempty"`   // 最严重的：error | warning | info
-	MissingToolchains []string          `json:"missingToolchains,omitempty"` // 如 ["jdk 17"]
-	Dependencies      string            `json:"dependencies,omitempty"`      // ok | missing | outdated | unknown（各模块中最差的）
-	Busy              string            `json:"busy,omitempty"`              // 正在进行的任务标题（导入、同步、安装…）
-	LastRun           *LastRun          `json:"lastRun,omitempty"`           // 最近一次结束的运行
+	ID                string                 `json:"id"`
+	Name              string                 `json:"name"`
+	Path              string                 `json:"path"`
+	WorkspaceID       string                 `json:"workspaceId"`
+	Facets            []FacetBadge           `json:"facets"`
+	Info              []sdk.InfoItem         `json:"info,omitempty"`
+	Status            string                 `json:"status"` // idle | starting | running | failed | stopping | partial
+	Runs              []RunBrief             `json:"runs,omitempty"`
+	Configs           []ConfigBrief          `json:"configs"`
+	DefaultConfigID   string                 `json:"defaultConfigId,omitempty"`
+	Launch            []string               `json:"launch,omitempty"`      // 「启动」面板里的运行配置 id（只含仍存在的）
+	LaunchAlias       map[string]string      `json:"launchAlias,omitempty"` // 启动项别名（运行配置 id → 别名）
+	RemoteLinks       map[string]RemoteLinks `json:"remoteLinks,omitempty"` // 远程时运行地址的打开方式（运行配置 id → 设置；缺省两种都要）
+	VCS               *VCSBrief              `json:"vcs,omitempty"`
+	Problems          int                    `json:"problems"`
+	ProblemSeverity   string                 `json:"problemSeverity,omitempty"`   // 最严重的：error | warning | info
+	MissingToolchains []string               `json:"missingToolchains,omitempty"` // 如 ["jdk 17"]
+	Dependencies      string                 `json:"dependencies,omitempty"`      // ok | missing | outdated | unknown（各模块中最差的）
+	Busy              string                 `json:"busy,omitempty"`              // 正在进行的任务标题（导入、同步、安装…）
+	LastRun           *LastRun               `json:"lastRun,omitempty"`           // 最近一次结束的运行
 }
 
 // FacetBadge 是卡片上的技术徽标（已本地化）。
@@ -175,6 +178,12 @@ type FacetBadge struct {
 	Icon     string `json:"icon,omitempty"` // 图标引用，见 docs/api.md「图标」
 	Category string `json:"category,omitempty"`
 	Plugin   string `json:"plugin"`
+}
+
+// RemoteLinks：连接远程服务器时，运行地址经端口转发到本机打开（Forward）和/或用服务器地址直接打开（Direct）。
+type RemoteLinks struct {
+	Forward bool `json:"forward"`
+	Direct  bool `json:"direct"`
 }
 
 type ConfigBrief struct {
@@ -569,4 +578,8 @@ type SystemInfo struct {
 	PluginDirs     []string  `json:"pluginDirs,omitempty"`   // 内置插件目录（排查用）
 	Locale         string    `json:"locale"`                 // 生效语言
 	MirrorRegion   string    `json:"mirrorRegion"`           // 生效镜像区域
+	Hostname       string    `json:"hostname"`               // 主机名（切换服务器时显示）
+	Home           string    `json:"home"`                   // 用户主目录（远程选择文件夹从这里开始）
+	PathSeparator  string    `json:"pathSeparator"`          // 路径分隔符：界面拼服务器路径时用它，不用本机的
+	APIVersion     int       `json:"apiVersion"`             // 远程协议版本
 }

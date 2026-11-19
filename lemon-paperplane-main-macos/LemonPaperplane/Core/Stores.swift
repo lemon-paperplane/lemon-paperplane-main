@@ -16,6 +16,18 @@ final class DataStore: ObservableObject {
 
     func workspace(_ id: String?) -> Workspace? { workspaces.first { $0.id == id } }
 
+    /// 切换服务器：清掉上一台的数据
+    func reset() {
+        workspaces = []
+        projects = [:]
+        settings = nil
+        contributions = Contributions()
+        plugins = []
+        toolchainKinds = []
+        toolchains = []
+        loaded = false
+    }
+
     /// 以内核的工作区列表为准：同时校正工程摘要里的 workspaceId（移动工程后摘要可能比工作区列表晚到）
     func applyWorkspaces(_ ws: [Workspace]) {
         workspaces = ws
@@ -53,6 +65,12 @@ final class RunStore: ObservableObject {
     @Published var tasks: [String: TaskInfo] = [:]
     /// 本界面发起的工具链下载任务：taskId → kind
     var toolchainTaskKind: [String: String] = [:]
+
+    func reset() {
+        runs = [:]
+        tasks = [:]
+        toolchainTaskKind = [:]
+    }
 
     var activeRuns: [Run] {
         runs.values.filter(\.isActive).sorted { ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
@@ -126,9 +144,23 @@ final class NavStore: ObservableObject {
 
     @Published var page: Page = .running {
         didSet {
-            if case .workspace(let id) = page { UserDefaults.standard.set(id, forKey: "PaperplaneLastWorkspace") }
+            if case .workspace(let id) = page { UserDefaults.standard.set(id, forKey: lastWorkspaceKey) }
             openProjectId = nil
         }
+    }
+
+    /// 当前服务器 id（本机为空）：上次的工作区按服务器分开记
+    var serverKey = ""
+    private var lastWorkspaceKey: String { serverKey.isEmpty ? "PaperplaneLastWorkspace" : "PaperplaneLastWorkspace." + serverKey }
+
+    /// 切换服务器：工作区、工程、运行配置选择都属于上一台
+    func resetForServerSwitch() {
+        if case .workspace = page { page = .running }
+        if case .pluginView = page { page = .running }
+        openProjectId = nil
+        selectedConfig = [:]
+        search = ""
+        visibleConsoles = 0
     }
 
     @Published var openProjectId: String?
@@ -141,6 +173,8 @@ final class NavStore: ObservableObject {
     /// 运行页里每个工程选中的运行配置
     @Published var selectedConfig: [String: String] = [:]
     @Published var isFullScreen = false
+    /// 设置页要滚动到的分组（「管理服务器…」打开 设置 → 服务器）
+    @Published var settingsAnchor: String?
 
     /// ⌘F：工具栏搜索框或控制台搜索
     let focusSearch = PassthroughSubject<Void, Never>()
@@ -148,7 +182,7 @@ final class NavStore: ObservableObject {
     /// 当前可见的控制台数量（⌘F 判断去向）
     var visibleConsoles = 0
 
-    var lastWorkspaceId: String? { UserDefaults.standard.string(forKey: "PaperplaneLastWorkspace") }
+    var lastWorkspaceId: String? { UserDefaults.standard.string(forKey: lastWorkspaceKey) }
 
     var currentWorkspaceId: String? {
         if case .workspace(let id) = page { return id }
@@ -195,6 +229,11 @@ final class TerminalStore: ObservableObject {
         let l = terminals(in: workspaceId)
         if let id = selected[workspaceId], let t = l.first(where: { $0.id == id }) { return t }
         return l.first
+    }
+
+    func reset() {
+        list = []
+        selected = [:]
     }
 
     func upsert(_ t: TerminalInfo) {

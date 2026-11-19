@@ -10,8 +10,9 @@ APP_RES="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
 WORK="${DERIVED_FILE_DIR:-${TMPDIR:-/tmp}}/paperplane-go"
 mkdir -p "$WORK" "$APP_MACOS" "$APP_RES"
 
-# Xcode 的构建环境 PATH 很短，补上常见的 Go 安装位置
-for d in /opt/homebrew/bin /usr/local/go/bin /usr/local/bin "$HOME/go/bin" "$HOME/sdk/go/bin"; do
+# Xcode 的构建环境 PATH 很短，补上常见的 Go 安装位置（含 build.sh 下载到工具缓存里的）
+for d in /opt/homebrew/bin /usr/local/go/bin /usr/local/bin "$HOME/go/bin" "$HOME/sdk/go/bin" \
+  $(ls -d "${PAPERPLANE_BUILD_CACHE:-$HOME/Library/Caches/LemonPaperplane/build-tools}"/go-*/go/bin 2>/dev/null | sort -V -r); do
   [ -d "$d" ] && PATH="$PATH:$d"
 done
 export PATH

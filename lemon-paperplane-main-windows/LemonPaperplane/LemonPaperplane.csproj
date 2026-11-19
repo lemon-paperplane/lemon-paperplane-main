@@ -37,13 +37,20 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
-    <Compile Include="..\build\Polyfills.cs" Link="Polyfills.cs" />
+    <Compile Include="..\build\Polyfills.cs">
+      <Link>Polyfills.cs</Link>
+    </Compile>
     <None Include="app.manifest" />
     <None Include="App.config" />
     <!-- 控件模板（运行时用 XamlReader 读取，不走 XAML 编译） -->
-    <EmbeddedResource Include="Design\Templates\*.xaml" LogicalName="templates/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Design\Templates\*.xaml">
+      <LogicalName>templates/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
     <!-- WebView2 的加载器（按进程架构从 runtimes\win-<arch>\native 加载） -->
-    <None Include="$(VendorDir)WebView2\runtimes\**\*.dll" Link="runtimes\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(VendorDir)WebView2\runtimes\**\*.dll">
+      <Link>runtimes\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PaperplaneKit\PaperplaneKit.csproj">

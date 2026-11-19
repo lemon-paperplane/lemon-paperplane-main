@@ -66,7 +66,11 @@ enum Actions {
 
     // MARK: 工程
 
+    /// 连着远程服务器：在访达中显示、用其他应用打开、本机终端这些只对本机有意义
+    static var isRemote: Bool { model.isRemote }
+
     static func open(_ projectId: String, with app: String, moduleId: String? = nil) {
+        guard !isRemote else { model.toasts.show("warning", tr("remote.localOnly")); return }
         model.perform(tr("action.open.failed")) { api in try await api.openProject(projectId, moduleId: moduleId, with: app) }
     }
 
@@ -105,6 +109,7 @@ enum Actions {
     }
 
     static func revealInFinder(_ path: String) {
+        guard !isRemote else { model.toasts.show("warning", tr("remote.localOnly")); return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
 
@@ -120,6 +125,7 @@ enum Actions {
     }
 
     static func openFile(_ path: String) {
+        guard !isRemote else { model.toasts.show("warning", tr("remote.localOnly")); return }
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
@@ -306,7 +312,8 @@ enum Actions {
     // MARK: 打开方式
 
     static func openWithEntries(_ projectId: String, moduleId: String? = nil) -> [MenuEntry] {
-        [
+        guard !isRemote else { return [] }
+        return [
             .item(tr("open.finder"), icon: "folder-open") { open(projectId, with: "finder", moduleId: moduleId) },
             .item(tr("open.terminal"), icon: "square-terminal") { open(projectId, with: "terminal", moduleId: moduleId) },
             .item(tr("open.idea"), icon: "code-xml") { open(projectId, with: "idea", moduleId: moduleId) },

@@ -49,7 +49,17 @@ public sealed class Tray : IDisposable
             _flyout.ShowNearCursor(x.HasValue && y.HasValue ? new System.Drawing.Point(x.Value, y.Value) : null);
             return System.Threading.Tasks.Task.FromResult(new Newtonsoft.Json.Linq.JObject { ["visible"] = _flyout.IsVisible });
         };
-        L10n.Shared.Changed += (_, _) => { if (_icon != null) _icon.Text = L.T("app.name"); };
+        L10n.Shared.Changed += (_, _) => UpdateTip();
+        AppModel.Shared.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(AppModel.Server)) UpdateTip(); };
+        UpdateTip();
+    }
+
+    /// <summary>提示文字带当前服务器名（连着远程时）；托盘提示最长 63 个字符。</summary>
+    private void UpdateTip()
+    {
+        if (_icon == null) return;
+        var t = AppModel.Shared.IsRemote ? L.T("app.name") + " · " + AppModel.Shared.ServerName : L.T("app.name");
+        _icon.Text = t.Length > 63 ? t.Substring(0, 62) + "…" : t;
     }
 
     /// <summary>任务栏深浅变了换图标颜色；按主屏 DPI 取像素尺寸。</summary>
@@ -152,7 +162,7 @@ public sealed class TrayContent : PPView
 
     public TrayContent()
     {
-        Observe(_model, nameof(AppModel.Connection));
+        Observe(_model, nameof(AppModel.Connection), nameof(AppModel.Server));
         Observe(_model.Runs, nameof(RunStore.Runs));
         Observe(_model.Data, nameof(DataStore.Projects), nameof(DataStore.Workspaces));
     }
@@ -166,7 +176,11 @@ public sealed class TrayContent : PPView
 
         var col = VStack(0);
         col.Align = CrossAlign.Stretch;
-        col.Children.Add(HStack(M.Sm, Text(L.T("app.name"), Typo.Title), Spacer(), ConnectionBadge()).Pad(M.Lg, 0).H(40));
+        // 标题带当前服务器名：浮窗里列的是当前服务器的运行
+        col.Children.Add(HStack(M.Sm, Text(L.T("app.name"), Typo.Title).Shrink(false),
+            HStack(M.Xs, new PPIcon(ServerDisplay.Icon(_model.IsRemote ? _model.Server?.Os : _model.LocalInfo?.Os ?? "windows"), M.IconSmall, ColorToken.IconSecondary),
+                Text(_model.ServerName, Typo.Body, ColorToken.TextSecondary)).Shrink().Id("tray.server"),
+            Spacer(), ConnectionBadge()).Pad(M.Lg, 0).H(40));
         col.Children.Add(new PPDivider(subtle: true));
         if (active.Count == 0)
         {
@@ -195,7 +209,8 @@ public sealed class TrayContent : PPView
         }).Id("tray.open"));
         actions.Children.Add(new PPDivider(subtle: true).Margins(0, M.Xs, 0, M.Xs));
         actions.Children.Add(TrayAction(L.T("menu.quitUI"), "log-out", () => _model.Quit(false)).Id("tray.quitUI"));
-        actions.Children.Add(TrayAction(L.T("menu.quitAll"), "power", () => _model.Quit(true), destructive: true).Id("tray.quitAll"));
+        // 只停本机的服务：远程服务器的服务不受界面退出影响
+        actions.Children.Add(TrayAction(L.T(_model.IsRemote ? "menu.quitAll.local" : "menu.quitAll"), "power", () => _model.Quit(true), destructive: true).Id("tray.quitAll"));
         col.Children.Add(actions.Pad(M.Xs));
         return col.W(340);
     }
@@ -210,7 +225,7 @@ public sealed class TrayContent : PPView
     private static UIElement TrayRunRow(RunModel run)
     {
         UIElement address = run.Urls.FirstOrDefault() is { } u
-            ? new PPLink(Format.ShortURL(u), () => Actions.OpenURL(u), mono: true)
+            ? RunAddress.Links(u, run.ProjectId, run.ConfigId)
             : Text(RunStatusStyle.Title(run.State), Typo.Small, ColorToken.TextTertiary);
         var content = HStack(M.Sm,
             new StatusDot(run.State),

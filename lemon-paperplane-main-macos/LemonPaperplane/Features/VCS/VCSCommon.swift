@@ -137,8 +137,10 @@ enum VCSPath {
         return String(n[n.index(after: i)...]).lowercased()
     }
 
+    /// 仓库根（服务器上的绝对路径）+ 相对路径：按服务器的路径规则拼
+    @MainActor
     static func join(_ root: String, _ rel: String) -> String {
-        (root as NSString).appendingPathComponent(rel)
+        AppModel.shared.serverPath.join(root, rel)
     }
 
     static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico", "icns", "heic"]

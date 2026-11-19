@@ -177,6 +177,13 @@ public sealed class DialogHost : Grid
         }
     }
 
+    private static bool OwnSubmitField(DependencyObject d)
+    {
+        for (var x = d; x != null; x = VisualTreeHelper.GetParent(x))
+            if (x is PPTextField tf) return tf.OnSubmit != null && tf.SubmitOverridesDialog;
+        return false;
+    }
+
     /// <summary>窗口按键（主窗口 PreviewKeyDown 里调用）：Esc 取消、回车主按钮。返回 true 表示已处理。</summary>
     public bool HandleKey(KeyEventArgs e)
     {
@@ -194,6 +201,8 @@ public sealed class DialogHost : Grid
             var focused = Keyboard.FocusedElement;
             if (focused is ButtonBase) return false; // 焦点在按钮上：回车按这个按钮
             if (focused is TextBox tb && tb.AcceptsReturn) return false;
+            // 焦点在自带回车处理的输入框上（如路径栏回车跳转）：交给输入框
+            if (focused is DependencyObject fd && OwnSubmitField(fd)) return false;
             if (dlg?.DefaultButton != null)
             {
                 if (dlg.DefaultButton.IsEnabled) Invoke(dlg.DefaultButton);

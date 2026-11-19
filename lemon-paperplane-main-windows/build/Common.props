@@ -24,12 +24,18 @@
   </PropertyGroup>
   <!-- 机器上没装 4.8 目标包时，用 build.ps1 下载的参考程序集（NuGet: Microsoft.NETFramework.ReferenceAssemblies.net48） -->
   <PropertyGroup Condition=" '$(PaperplaneRefAssemblies)' != '' ">
-    <TargetFrameworkRootPath>$([MSBuild]::EnsureTrailingSlash('$(PaperplaneRefAssemblies)'))</TargetFrameworkRootPath>
+    <TargetFrameworkRootPath>$(PaperplaneRefAssemblies)</TargetFrameworkRootPath>
+    <TargetFrameworkRootPath Condition=" !HasTrailingSlash('$(TargetFrameworkRootPath)') ">$(TargetFrameworkRootPath)\</TargetFrameworkRootPath>
+  </PropertyGroup>
+  <!-- Windows 自带的 MSBuild 4.x（根目录 build.ps1 用它 + 新版 Roslyn，不需要 Visual Studio）：
+       老的 Csc 任务不认识 Nullable / Deterministic，用响应文件补上 -->
+  <PropertyGroup Condition=" '$(MSBuildToolsVersion)' == '4.0' ">
+    <CompilerResponseFile>$(MSBuildThisFileDirectory)legacy-csc.rsp</CompilerResponseFile>
   </PropertyGroup>
   <!-- 版本：package.ps1 传 /p:PaperplaneVersion=1.2.3；程序集版本只能是数字，从中取 x.y.z -->
   <PropertyGroup>
     <PaperplaneVersion Condition=" '$(PaperplaneVersion)' == '' ">0.1.0</PaperplaneVersion>
-    <PaperplaneNumericVersion>$([System.Text.RegularExpressions.Regex]::Match('$(PaperplaneVersion)', '^\d+(\.\d+){0,2}').Value).0</PaperplaneNumericVersion>
+    <PaperplaneNumericVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(PaperplaneVersion)', '^(\d+(\.\d+){0,2}).*$', '$1')).0</PaperplaneNumericVersion>
   </PropertyGroup>
   <Target Name="PaperplaneVersionInfo" BeforeTargets="CoreCompile">
     <ItemGroup>

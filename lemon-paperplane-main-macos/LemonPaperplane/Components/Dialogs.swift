@@ -22,6 +22,9 @@ final class DialogStore: ObservableObject {
 
     func dismiss(_ id: String) { stack.removeAll { $0.id == id } }
 
+    /// 切换服务器：上一台的对话框（含 daemon 的 prompt）全部关掉
+    func dismissAll() { stack.removeAll() }
+
     func contains(_ id: String) -> Bool { stack.contains { $0.id == id } }
 
     func cancelTop() {
@@ -82,13 +85,21 @@ struct DialogHost: View {
 
     var body: some View {
         ZStack {
-            if let top = store.stack.last {
+            if !store.stack.isEmpty {
                 theme.scrim
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture {}
-                top.view
-                    .id(top.id)
+            }
+            // 下层对话框留在视图树里（隐藏且禁用），上层关掉后填过的内容还在
+            // （如克隆对话框里点「选择…」弹出选择服务器上的文件夹）
+            ForEach(Array(store.stack.enumerated()), id: \.element.id) { i, entry in
+                let top = i == store.stack.count - 1
+                entry.view
+                    .disabled(!top)
+                    .allowsHitTesting(top)
+                    .opacity(top ? 1 : 0)
+                    .accessibilityHidden(!top)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }

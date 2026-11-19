@@ -1,7 +1,7 @@
 import PaperplaneKit
 import SwiftUI
 
-/// 主工具栏（40px）：侧栏开关、当前位置、搜索、导入、运行中指示、后台任务指示。
+/// 主工具栏（40px）：侧栏开关、服务器切换器、搜索、导入、运行中指示、后台任务指示。
 struct MainToolbar: View {
     @ObservedObject private var model = AppModel.shared
     @ObservedObject private var nav = AppModel.shared.nav
@@ -15,10 +15,8 @@ struct MainToolbar: View {
             PPIconButton(nav.sidebarVisible ? "panel-left-close" : "panel-left-open", help: tr("toolbar.toggleSidebar")) {
                 withAnimation(.easeOut(duration: 0.15)) { nav.sidebarVisible.toggle() }
             }
-            Text(title)
-                .font(.pp(.title))
-                .lineLimit(1)
-                .padding(.leading, M.xs)
+            // 服务器切换器（原来的位置标题）
+            ServerSwitcher()
             if model.connection == .reconnecting {
                 HStack(spacing: M.xs) {
                     PPSpinner(size: M.iconSmall, color: theme.warning)
@@ -36,21 +34,6 @@ struct MainToolbar: View {
         .frame(height: M.toolbarHeight)
         .background(WindowDragArea())
         .onReceive(nav.focusSearch) { _ in searchFocused = true }
-    }
-
-    private var title: String {
-        if nav.openProjectId != nil {
-            if case .workspace(let id) = nav.page { return data.workspace(id)?.name ?? "" }
-            return tr("sidebar.running")
-        }
-        switch nav.page {
-        case .workspace(let id): return data.workspace(id)?.name ?? ""
-        case .running: return tr("sidebar.running")
-        case .toolchains: return tr("sidebar.toolchains")
-        case .plugins: return tr("sidebar.plugins")
-        case .settings: return tr("sidebar.settings")
-        case .pluginView(let key): return data.contributions.views.first { $0.key == key }?.title ?? ""
-        }
     }
 
     private var showsSearch: Bool {
@@ -182,7 +165,7 @@ struct RunRow: View {
                     }
                     HStack(spacing: M.md) {
                         if let url = run.urls.first {
-                            PPLink(title: Format.shortURL(url), mono: true) { Actions.openURL(url) }
+                            RunURLLinks(url: url, projectId: run.projectId, configId: run.configId, icon: nil)
                         } else {
                             Text(RunStatusStyle.title(run.state)).font(.pp(.small)).foregroundColor(theme.textTertiary)
                         }

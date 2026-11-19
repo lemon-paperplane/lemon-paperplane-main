@@ -26,6 +26,8 @@ public struct Project: Codable, Hashable, Identifiable {
     public var importedAt: Date?
     public var analyzedAt: Date?
     public var defaultConfigId: String?
+    /// 连接远程服务器时运行地址的打开方式（运行配置 id → 设置；没有记录的按两种都显示）
+    @DefDict public var remoteLinks: [String: RemoteLinks]
 
     /// 全部运行配置（按模块顺序）
     public var allRunConfigs: [RunConfig] { modules.flatMap { $0.runConfigs } }
@@ -177,6 +179,8 @@ public struct ProjectSummary: Codable, Hashable, Identifiable {
     public var busy: String?
     /// 最近一次结束的运行（卡片「未运行 · 上次运行 3 小时前」）
     public var lastRun: LastRun?
+    /// 连接远程服务器时运行地址的打开方式（运行配置 id → 设置；没有记录的按两种都显示）
+    @DefDict public var remoteLinks: [String: RemoteLinks]
 
     public init(id: String, name: String, path: String, workspaceId: String, status: String = "idle") {
         self.id = id; self.name = name; self.path = path; self.workspaceId = workspaceId; self.status = status
@@ -597,6 +601,14 @@ public struct SystemInfo: Codable, Hashable {
     @DefInt public var plugins: Int
     public var pluginErrors: [String]?
     public var pluginDirs: [String]?
+    /// 主机名（切换服务器时显示）
+    @DefString public var hostname: String
+    /// 用户主目录（选择服务器上的文件夹从这里开始；路径缩写 ~ 用它）
+    @DefString public var home: String
+    /// 服务器的路径分隔符：拼服务器路径时用它，不用本机的
+    @DefString public var pathSeparator: String
+    /// 远程协议版本
+    @DefInt public var apiVersion: Int
 }
 
 // MARK: - 各操作的专用输出

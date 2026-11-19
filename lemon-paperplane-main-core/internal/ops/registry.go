@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/engine"
+	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/gateway"
+	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/remote"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/schema"
 	sdk "github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-plugin-sdk"
 )
@@ -40,12 +42,15 @@ type Extras struct {
 	PID      int
 	MCPURL   string
 	Shutdown func(stopRuns bool)
+	Remote   *remote.Manager  // 本机作为服务器（远程监听、密钥、账号）
+	Gateway  *gateway.Manager // 连接远程服务器的网关
 }
 
 // New 创建注册表并注册全部内置操作。
 func New(e *engine.Engine) *Registry {
 	r := &Registry{e: e, ops: map[string]*Op{}}
 	r.registerAll()
+	r.registerRemote()
 	return r
 }
 
@@ -111,6 +116,12 @@ func (r *Registry) Call(ctx context.Context, name string, raw json.RawMessage) (
 	op := r.Get(name)
 	if op == nil {
 		return nil, ErrUnknownOp
+	}
+	if remote.PrincipalFrom(ctx) != nil {
+		if remoteDenied(name) {
+			return nil, engine.Errf("remote.denied", name)
+		}
+		r.auditRemoteCall(ctx, op)
 	}
 	return op.handler(ctx, raw)
 }

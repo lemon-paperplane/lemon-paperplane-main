@@ -7,6 +7,7 @@ struct MenuBarContent: View {
     @ObservedObject private var model = AppModel.shared
     @ObservedObject private var runs = AppModel.shared.runs
     @ObservedObject private var data = AppModel.shared.data
+    @ObservedObject private var servers = AppModel.shared.servers
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -15,7 +16,13 @@ struct MenuBarContent: View {
         let order = data.allProjects.map(\.id).filter { groups[$0] != nil } + groups.keys.filter { data.projects[$0] == nil }
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: M.sm) {
-                Text(tr("app.name")).font(.pp(.title))
+                Text(tr("app.name")).font(.pp(.title)).lineLimit(1)
+                // 显示的是当前服务器的运行：标题带服务器名
+                if servers.isRemote {
+                    Text("·").foregroundColor(theme.textTertiary)
+                    PPIcon(ServerStore.osIcon(model.systemInfo?.os ?? servers.current?.os ?? ""), size: M.iconSmall, color: theme.iconSecondary)
+                    Text(servers.currentName).font(.pp(.title)).foregroundColor(theme.textSecondary).lineLimit(1)
+                }
                 Spacer()
                 connectionBadge
             }
@@ -52,7 +59,10 @@ struct MenuBarContent: View {
                 }
                 PPDivider(subtle: true).padding(.vertical, M.xs)
                 MenuBarAction(title: tr("menu.quitUI"), icon: "log-out") { model.quit(stopServices: false) }
-                MenuBarAction(title: tr("menu.quitAll"), icon: "power", destructive: true) { model.quit(stopServices: true) }
+                // 只停本机的服务：连着远程服务器时文案写明「本机」
+                MenuBarAction(title: servers.isRemote ? tr("menu.quitAll.local") : tr("menu.quitAll"), icon: "power", destructive: true) {
+                    model.quit(stopServices: true)
+                }
             }
             .padding(M.xs)
         }
@@ -62,7 +72,14 @@ struct MenuBarContent: View {
 
     @ViewBuilder private var connectionBadge: some View {
         switch model.connection {
-        case .connected: EmptyView()
+        case .connected:
+            if servers.isRemote {
+                switch servers.phase {
+                case .ready: EmptyView()
+                case .connecting: PPSpinner(size: M.iconSmall)
+                case .failed: PPBadge(text: tr("server.status.failed"), tone: "danger")
+                }
+            }
         case .connecting, .reconnecting: PPSpinner(size: M.iconSmall)
         case .failed: PPBadge(text: tr("connection.failed"), tone: "danger")
         }
@@ -84,7 +101,7 @@ private struct MenuBarRunRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(run.name).lineLimit(1)
                     if let u = run.urls.first {
-                        PPLink(title: Format.shortURL(u), mono: true) { Actions.openURL(u) }
+                        RunURLLinks(url: u, projectId: run.projectId, configId: run.configId, icon: nil)
                     } else {
                         Text(RunStatusStyle.title(run.state)).font(.pp(.small)).foregroundColor(theme.textTertiary)
                     }

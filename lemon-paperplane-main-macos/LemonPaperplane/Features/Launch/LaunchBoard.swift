@@ -237,7 +237,7 @@ private struct LaunchItemRow: View {
                 .frame(width: 156, alignment: .leading)
             Group {
                 if let active, let u = active.urls.first {
-                    PPLink(title: Format.shortURL(u), mono: true, icon: "external-link") { Actions.openURL(u) }
+                    RunURLLinks(url: u, projectId: active.projectId, configId: active.configId)
                 } else {
                     Color.clear
                 }
@@ -538,20 +538,12 @@ struct AddCommandDialog: View {
     /// 选执行目录：从工程目录开始；工程内的目录显示成相对路径
     private func chooseDir() {
         guard let p = project else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: cwd.isEmpty ? p.path : (cwd.hasPrefix("/") ? cwd : p.path + "/" + cwd))
-        guard panel.runModal() == .OK, let path = panel.url?.path else { return }
-        let root = (p.path as NSString).standardizingPath
-        let chosen = (path as NSString).standardizingPath
-        if chosen == root {
-            cwd = ""
-        } else if chosen.hasPrefix(root + "/") {
-            cwd = String(chosen.dropFirst(root.count + 1))
-        } else {
-            cwd = chosen
+        // 路径按服务器的规则（连着 Windows 服务器时是 C:\…）
+        let sp = AppModel.shared.serverPath
+        let start = cwd.isEmpty ? p.path : (sp.isAbsolute(cwd) ? cwd : sp.join(p.path, cwd))
+        let binding = $cwd
+        PathPicker.choose(title: tr("launch.addCommand.cwd"), kind: .folder, initial: start) { path in
+            binding.wrappedValue = sp.relative(path, to: p.path) ?? sp.normalize(path)
         }
     }
 

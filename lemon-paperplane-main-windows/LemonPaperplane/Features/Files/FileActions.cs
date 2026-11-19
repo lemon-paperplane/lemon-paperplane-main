@@ -13,11 +13,11 @@ public static class FileActions
 {
     private static AppModel Model => AppModel.Shared;
 
-    /// <summary>相对工程根的路径（"/" 分隔）→ 绝对路径（Windows 分隔符）。</summary>
+    /// <summary>相对工程根的路径（"/" 分隔）→ 绝对路径（按服务器的分隔符：连着 Mac / Linux 服务器时是 /…）。</summary>
     public static string Absolute(string rel, string projectPath)
     {
         if (string.IsNullOrEmpty(rel)) return projectPath;
-        return Path.Combine(projectPath, rel.Replace('/', Path.DirectorySeparatorChar));
+        return ServerPath.Join(projectPath, rel, AppModel.Shared.PathSeparator);
     }
 
     /// <summary>所在目录（相对路径）；根下的条目为 ""。</summary>
@@ -161,8 +161,12 @@ public static class FileActions
         e.Add(MenuEntry.Item(L.T("files.rename"), () => Rename(projectId, entry, tree), icon: "pencil"));
         e.Add(MenuEntry.Item(L.T("files.delete"), () => Delete(projectId, new[] { entry }, tree), icon: "trash-2", destructive: true));
         e.Add(MenuEntry.Divider);
-        e.Add(MenuEntry.Item(L.T("open.finder"), () => RevealInExplorer(entry.Path, projectPath), icon: "folder-open"));
-        e.Add(MenuEntry.Item(L.T("files.openTerminal"), () => OpenTerminal(entry.Dir ? entry.Path : Parent(entry.Path), projectPath), icon: "square-terminal"));
+        // 在资源管理器 / 终端中打开是本机操作：连着远程服务器时隐藏
+        if (Actions.LocalOnlyAvailable)
+        {
+            e.Add(MenuEntry.Item(L.T("open.finder"), () => RevealInExplorer(entry.Path, projectPath), icon: "folder-open"));
+            e.Add(MenuEntry.Item(L.T("files.openTerminal"), () => OpenTerminal(entry.Dir ? entry.Path : Parent(entry.Path), projectPath), icon: "square-terminal"));
+        }
         e.Add(MenuEntry.Item(L.T("files.copyPath"), () => Actions.Copy(Absolute(entry.Path, projectPath)), icon: "copy"));
         e.Add(MenuEntry.Item(L.T("files.copyRelativePath"), () => Actions.Copy(entry.Path), icon: "clipboard"));
         if (entry.Dir && tree != null)

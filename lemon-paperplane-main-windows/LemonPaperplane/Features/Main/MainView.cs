@@ -42,6 +42,7 @@ public sealed class MainContent : PPView
     protected override UIElement Build()
     {
         var c = _model.Connection;
+        if (c.IsFailed && c.Remote) return new ServerUnavailableView(c);
         if (c.IsFailed) return new ConnectionFailedView(c.Message ?? "");
         if (c.Kind == ConnectionState.Connecting.Kind && !_model.Data.Loaded)
         {

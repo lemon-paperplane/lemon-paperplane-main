@@ -135,6 +135,12 @@ final class ResourceStore: ObservableObject {
         AppModel.shared.runs.activeRuns(projectId: projectId).reduce(0) { $0 + (byRun[$1.id]?.snap.rssMB ?? 0) }
     }
 
+    /// 切换服务器：清空
+    func reset() {
+        byRun = [:]
+        totals = Totals()
+    }
+
     /// 只保留仍在运行列表里的运行（结束的保留最近若干个，跟 RunStore 一致）
     func prune(keep: Set<String>) {
         byRun = byRun.filter { keep.contains($0.key) }

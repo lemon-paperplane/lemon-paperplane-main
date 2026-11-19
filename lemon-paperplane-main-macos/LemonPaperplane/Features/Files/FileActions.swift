@@ -7,9 +7,9 @@ import SwiftUI
 enum FileActions {
     static var model: AppModel { AppModel.shared }
 
-    /// 相对工程根的路径 → 绝对路径
+    /// 相对工程根的路径 → 绝对路径（按服务器的路径规则，连着 Windows 服务器时是 C:\…）
     static func absolute(_ rel: String, projectPath: String) -> String {
-        rel.isEmpty ? projectPath : (projectPath as NSString).appendingPathComponent(rel)
+        model.serverPath.absolute(rel, root: projectPath)
     }
 
     /// 所在目录（相对路径）；根下的条目为 ""
@@ -63,6 +63,7 @@ enum FileActions {
 
     /// 在设置里选的终端中打开目录（默认 Terminal）
     static func openTerminal(at rel: String, projectPath: String) {
+        guard !Actions.isRemote else { model.toasts.show("warning", tr("remote.localOnly")); return }
         let url = URL(fileURLWithPath: absolute(rel, projectPath: projectPath), isDirectory: true)
         let ids: [String: String] = [
             "Terminal": "com.apple.Terminal", "iTerm": "com.googlecode.iterm2",
@@ -95,10 +96,17 @@ enum FileActions {
             .item(tr("files.rename"), icon: "pencil") { rename(projectId: projectId, entry: entry, tree: tree) },
             .item(tr("files.delete"), icon: "trash-2", destructive: true) { delete(projectId: projectId, entries: [entry], tree: tree) },
             .divider,
-            .item(tr("open.finder"), icon: "folder-open") { revealInFinder(entry.path, projectPath: projectPath) },
-            .item(tr("files.openTerminal"), icon: "square-terminal") {
-                openTerminal(at: entry.dir ? entry.path : parent(of: entry.path), projectPath: projectPath)
-            },
+        ]
+        // 在访达 / 本机终端里打开：只对本机有意义
+        if !Actions.isRemote {
+            e += [
+                .item(tr("open.finder"), icon: "folder-open") { revealInFinder(entry.path, projectPath: projectPath) },
+                .item(tr("files.openTerminal"), icon: "square-terminal") {
+                    openTerminal(at: entry.dir ? entry.path : parent(of: entry.path), projectPath: projectPath)
+                },
+            ]
+        }
+        e += [
             .item(tr("files.copyPath"), icon: "copy") { Actions.copy(absolute(entry.path, projectPath: projectPath)) },
             .item(tr("files.copyRelativePath"), icon: "clipboard") { Actions.copy(entry.path) },
         ]

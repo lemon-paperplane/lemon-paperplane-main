@@ -14,13 +14,14 @@ struct LemonPaperplaneApp: App {
                 .accessibilityLabel(tr("app.name"))
         }
         .menuBarExtraStyle(.window)
-        .commands { AppCommands(l10n: l10n) }
+        .commands { AppCommands(l10n: l10n, servers: AppModel.shared.servers) }
     }
 }
 
 /// 应用菜单（快捷键：⌘R 运行、⌘. 停止、⌘F 搜索、⌘, 设置、⌘N 导入）
 struct AppCommands: Commands {
     @ObservedObject var l10n: L10n
+    @ObservedObject var servers: ServerStore
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -50,7 +51,8 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .appTermination) {
             Button(tr("menu.quitUI")) { AppModel.shared.quit(stopServices: false) }
                 .keyboardShortcut("q", modifiers: .command)
-            Button(tr("menu.quitAll")) { AppModel.shared.quit(stopServices: true) }
+            // 只停本机的服务；连着远程服务器时文案写明「本机」
+            Button(servers.isRemote ? tr("menu.quitAll.local") : tr("menu.quitAll")) { AppModel.shared.quit(stopServices: true) }
                 .keyboardShortcut("q", modifiers: [.command, .option])
         }
     }

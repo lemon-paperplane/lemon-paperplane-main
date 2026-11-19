@@ -24,15 +24,10 @@ public static class ImportFlow
     public static string? ChooseFile(string title, IEnumerable<(string Name, string Spec)>? filters = null, string? initialDirectory = null) =>
         ShellDialogs.Pick(title, initialDirectory, pickFolders: false, filters: filters?.ToList());
 
-    public static void ImportFolder()
-    {
-        if (ChooseFolder(L.T("import.folder")) is { } path) ImportPath(path);
-    }
+    /// <summary>导入文件夹：本机用系统对话框，连着远程服务器时选服务器上的文件夹。</summary>
+    public static void ImportFolder() => ServerFiles.ChooseFolder(L.T("import.folder"), null, ImportPath);
 
-    public static void ScanFolder()
-    {
-        if (ChooseFolder(L.T("import.scan")) is { } path) ScanPath(path);
-    }
+    public static void ScanFolder() => ServerFiles.ChooseFolder(L.T("import.scan"), null, ScanPath);
 
     /// <summary>直接打开某个文件夹的导入预览（拖放、命令行等已经有路径时）。</summary>
     public static void ImportPath(string path)
@@ -48,12 +43,8 @@ public static class ImportFlow
         Dialogs.Present(id, new ScanDialog(id, path));
     }
 
-    /// <summary>比较用的规范路径（Windows 不区分大小写，去掉末尾分隔符）。</summary>
-    internal static string Normalize(string p)
-    {
-        try { p = Path.GetFullPath(p); } catch { }
-        return p.TrimEnd('\\', '/').ToLowerInvariant();
-    }
+    /// <summary>比较用的规范路径（按服务器的规则：Windows 不区分大小写，去掉末尾分隔符）。</summary>
+    internal static string Normalize(string p) => ServerPath.Normalize(p, AppModel.Shared.PathSeparator);
 }
 
 /// <summary>导入预览：识别结果、名称、目标工作区（对应 Mac ImportPreviewDialog）。</summary>
@@ -84,7 +75,7 @@ public sealed class ImportPreviewDialog : PPView
         _busy = UseState(false);
         _error = UseState<string?>(null);
         _workspaceId = UseState(Actions.TargetWorkspaceId ?? "");
-        _name = new State<string>(Path.GetFileName(path.TrimEnd('\\', '/')));
+        _name = new State<string>(ServerFiles.Name(path));
         Observe(_data, nameof(DataStore.Workspaces));
         HorizontalAlignment = HorizontalAlignment.Center;
         VerticalAlignment = VerticalAlignment.Center;

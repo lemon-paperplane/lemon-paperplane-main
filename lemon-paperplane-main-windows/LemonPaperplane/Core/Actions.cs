@@ -86,9 +86,17 @@ public static partial class Actions
     public static void Move(string projectId, string workspaceId) =>
         Model.Perform(async api => await api.MoveProjectAsync(projectId, workspaceId));
 
-    /// <summary>在资源管理器中显示（文件则选中它）。</summary>
+    /// <summary>只在本机可用的操作（在资源管理器中显示、用其他应用打开、打开本机文件、安装命令行工具）：连着远程服务器时隐藏。</summary>
+    public static bool LocalOnlyAvailable => !Model.IsRemote;
+
+    /// <summary>在资源管理器中显示（文件则选中它）。连着远程服务器时路径在服务器上，不可用。</summary>
     public static void RevealInExplorer(string path)
     {
+        if (Model.IsRemote)
+        {
+            Model.Toasts.Show("warning", L.T("remote.localOnly"));
+            return;
+        }
         try
         {
             var full = Path.GetFullPath(path);
@@ -106,6 +114,16 @@ public static partial class Actions
         catch (Exception e) { Model.Toasts.Error(e); }
     }
 
+    /// <summary>
+    /// 打开服务器输出里的地址（控制台、终端里的链接）：连着远程服务器时 localhost / 127.0.0.1 指的是服务器上的端口，
+    /// 先经网关转发到本机再打开；其余照常打开。
+    /// </summary>
+    public static void OpenServerURL(string url)
+    {
+        if (Model.IsRemote && RunAddress.TryLocal(url, out var port)) Model.OpenForwarded(url, port);
+        else OpenURL(url);
+    }
+
     public static void Copy(string text, string? toast = null)
     {
         try
@@ -119,6 +137,11 @@ public static partial class Actions
     /// <summary>用系统默认程序打开文件。</summary>
     public static void OpenFile(string path)
     {
+        if (Model.IsRemote)
+        {
+            Model.Toasts.Show("warning", L.T("remote.localOnly"));
+            return;
+        }
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
         catch (Exception e) { Model.Toasts.Error(e); }
     }
@@ -319,7 +342,8 @@ public static partial class Actions
     // ---------------------------------------------------------------------------
     // 打开方式
 
-    public static IEnumerable<MenuEntry> OpenWithEntries(string projectId, string? moduleId = null) => new[]
+    /// <summary>用其他应用打开（project.open 在服务器上打开）：连着远程服务器时没有。</summary>
+    public static IEnumerable<MenuEntry> OpenWithEntries(string projectId, string? moduleId = null) => Model.IsRemote ? Array.Empty<MenuEntry>() : new[]
     {
         MenuEntry.Item(L.T("open.finder"), () => Open(projectId, "finder", moduleId), icon: "folder-open"),
         MenuEntry.Item(L.T("open.terminal"), () => Open(projectId, "terminal", moduleId), icon: "square-terminal"),

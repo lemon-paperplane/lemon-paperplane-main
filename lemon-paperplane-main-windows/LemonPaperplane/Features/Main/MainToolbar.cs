@@ -8,7 +8,7 @@ using RunModel = PaperplaneKit.Run;
 
 namespace LemonPaperplane;
 
-/// <summary>工具栏左侧：侧栏开关、当前位置、重新连接中（对应 Mac MainToolbar 左半部分）。</summary>
+/// <summary>工具栏左侧：侧栏开关、服务器切换器（docs/remote.md 5.1）、重新连接中（对应 Mac MainToolbar 左半部分）。</summary>
 public sealed class MainToolbarLeft : PPView
 {
     private readonly MainWindow _window;
@@ -18,8 +18,6 @@ public sealed class MainToolbarLeft : PPView
     {
         _window = window;
         Observe(_model, nameof(AppModel.Connection));
-        Observe(_model.Nav, nameof(NavStore.Page), nameof(NavStore.OpenProjectId));
-        Observe(_model.Data, nameof(DataStore.Workspaces), nameof(DataStore.Contributions));
         Observe(h => window.SidebarVisibleChanged += h, h => window.SidebarVisibleChanged -= h);
     }
 
@@ -27,29 +25,11 @@ public sealed class MainToolbarLeft : PPView
     {
         var toggle = new PPIconButton(_window.SidebarVisible ? "panel-left-close" : "panel-left-open", L.T("toolbar.toggleSidebar"),
             () => _window.SidebarVisible = !_window.SidebarVisible).Id("toolbar.sidebar");
-        var row = HStack(M.Xs, toggle, Text(Title(), Typo.Title).Margins(M.Xs, 0, 0, 0));
+        var row = HStack(M.Xs, toggle, Keep("server", () => new ServerSwitcher()));
         if (_model.Connection.Kind == ConnectionState.Reconnecting.Kind)
             row.Children.Add(HStack(M.Xs, new PPSpinner(M.IconSmall, ColorToken.Warning),
                 Text(L.T("connection.reconnecting"), Typo.Small, ColorToken.Warning)).Margins(M.Md, 0, 0, 0));
         return row;
-    }
-
-    private string Title()
-    {
-        var nav = _model.Nav;
-        var data = _model.Data;
-        if (nav.OpenProjectId != null)
-            return nav.Page.IsWorkspace ? data.Workspace(nav.Page.Id)?.Name ?? "" : L.T("sidebar.running");
-        return nav.Page.Kind switch
-        {
-            NavPage.KindWorkspace => data.Workspace(nav.Page.Id)?.Name ?? "",
-            NavPage.KindRunning => L.T("sidebar.running"),
-            NavPage.KindToolchains => L.T("sidebar.toolchains"),
-            NavPage.KindPlugins => L.T("sidebar.plugins"),
-            NavPage.KindSettings => L.T("sidebar.settings"),
-            NavPage.KindPluginView => data.Contributions.Views.FirstOrDefault(v => v.Key == nav.Page.Id)?.Title ?? "",
-            _ => "",
-        };
     }
 }
 
@@ -119,18 +99,38 @@ public sealed class RunsIndicator : PPView
     public RunsIndicator()
     {
         Observe(_runs, nameof(RunStore.Runs));
-        _open = UseState(false);
+        // 不订阅：弹出框的锚点跨重建复用（锚点被换掉会把刚打开的弹出框关掉）
+        _open = new State<bool>(false);
     }
 
     protected override UIElement Build()
     {
         var count = _runs.ActiveRuns.Count;
-        var label = Box(HStack(M.Xs, new PPIcon("activity", M.Icon, count == 0 ? ColorToken.IconSecondary : ColorToken.StatusRunning),
-                Text(count.ToString(), Typo.Label).TabularDigits()))
-            .Pad(M.Sm, 0).H(M.IconButton).Rounded(M.RadiusMD).Bg(_open.Value ? ColorToken.BgPressed : ColorToken.Clear)
-            .Tip(L.T("toolbar.runs")).Id("toolbar.runs");
-        label.OnClick(() => _open.Value = !_open.Value);
-        return label.PPPopover(_open, () => new PopoverContent(new RunsPopover(() => _open.Value = false), 380), PopupAlignment.Trailing);
+        var content = HStack(M.Xs, new PPIcon("activity", M.Icon, count == 0 ? ColorToken.IconSecondary : ColorToken.StatusRunning),
+            Text(count.ToString(), Typo.Label).TabularDigits());
+        return Keep("label", () => PopoverAnchor.Make(_open, L.T("toolbar.runs"), "toolbar.runs",
+                () => new PopoverContent(new RunsPopover(() => _open.Value = false), 380)),
+            b => { b.Child = content; b.ToolTip = L.T("toolbar.runs"); });
+    }
+}
+
+/// <summary>工具栏里点开弹出框的小按钮：锚点跨重建复用，按下态跟着弹出框开关。</summary>
+internal static class PopoverAnchor
+{
+    public static System.Windows.Controls.Border Make(State<bool> open, string tip, string id, Func<UIElement> content)
+    {
+        var label = Box().Pad(M.Sm, 0).H(M.IconButton).Rounded(M.RadiusMD);
+        void Paint() => label.Bg(open.Value ? ColorToken.BgPressed : ColorToken.Clear);
+        open.PropertyChanged += (_, _) => Paint();
+        Paint();
+        label.VerticalAlignment = VerticalAlignment.Center;
+        label.Tip(tip).Id(id);
+        label.OnClick(() =>
+        {
+            if (!open.Value && PopupController.WasJustDismissed(label)) return;
+            open.Value = !open.Value;
+        });
+        return label.PPPopover(open, content, PopupAlignment.Trailing);
     }
 }
 
@@ -189,7 +189,7 @@ public sealed class RunRow : PPView
         var title = HStack(M.Xs, Text(r.Name, Typo.BodyStrong),
             _projectName != null ? Text(_projectName, Typo.Body, ColorToken.TextSecondary) : null);
         UIElement address = r.Urls.FirstOrDefault() is { } url
-            ? new PPLink(Format.ShortURL(url), () => Actions.OpenURL(url), mono: true)
+            ? RunAddress.Links(url, r.ProjectId, r.ConfigId)
             : Text(RunStatusStyle.Title(r.State), Typo.Small, ColorToken.TextTertiary);
         var sub = HStack(M.Md, address, RunState.IsActive(r.State) ? new RunResourceInline(r.Id, r.StartedAt, 48) : null);
         var content = HStack(M.Md,
@@ -216,7 +216,8 @@ public sealed class TasksIndicator : PPView
     public TasksIndicator()
     {
         Observe(_runs, nameof(RunStore.Tasks));
-        _open = UseState(false);
+        // 不订阅：弹出框的锚点跨重建复用（任务进度变化时弹出框不被关掉）
+        _open = new State<bool>(false);
     }
 
     protected override UIElement Build()
@@ -226,11 +227,9 @@ public sealed class TasksIndicator : PPView
         UIElement inner = active == 0
             ? new PPIcon("circle-check", M.Icon, ColorToken.IconSecondary)
             : HStack(M.Xs, new PPSpinner(M.Icon, ColorToken.Accent), Text(active.ToString(), Typo.Label).TabularDigits());
-        var label = Box(inner).Pad(M.Sm, 0).H(M.IconButton).Rounded(M.RadiusMD).Bg(_open.Value ? ColorToken.BgPressed : ColorToken.Clear)
-            .Tip(L.T("toolbar.tasks")).Id("toolbar.tasks");
-        label.VerticalAlignment = VerticalAlignment.Center;
-        label.OnClick(() => _open.Value = !_open.Value);
-        return label.PPPopover(_open, () => new PopoverContent(new TasksPopover(() => _open.Value = false), 380), PopupAlignment.Trailing);
+        return Keep("label", () => PopoverAnchor.Make(_open, L.T("toolbar.tasks"), "toolbar.tasks",
+                () => new PopoverContent(new TasksPopover(() => _open.Value = false), 380)),
+            b => { b.Child = inner; b.ToolTip = L.T("toolbar.tasks"); });
     }
 }
 

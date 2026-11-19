@@ -398,7 +398,8 @@ public extension APIClient {
     /// webview 视图：view.render 不调插件，直接返回 {"webviewUrl": "..."}（docs/api.md 第 6 节）
     func webviewURL(_ ctx: ViewContext) async throws -> URL? {
         let r: JSONValue = try await call("view.render", .object(ctx.input))
-        return r["webviewUrl"]?.stringValue.flatMap { URL(string: $0) }
+        // 远程服务器给的是它自己的回环地址与令牌：换成本客户端（网关）的
+        return r["webviewUrl"]?.stringValue.flatMap { URL(string: $0) }.map(rebasedWebviewURL)
     }
 
     func viewEvent(_ ctx: ViewContext, event: String, values: [String: JSONValue],

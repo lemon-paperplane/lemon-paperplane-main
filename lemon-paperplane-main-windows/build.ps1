@@ -7,6 +7,10 @@
 #
 # 需要：Visual Studio 2022+ 或 Build Tools（含 MSBuild），或挂载好的 EWDK。
 # 机器上没有 .NET Framework 4.8 目标包时，自动下载参考程序集（NuGet: Microsoft.NETFramework.ReferenceAssemblies.net48）。
+# 什么都没装的机器用仓库根目录的 build.ps1：它准备好 Roslyn 后设置下面的环境变量再调用本脚本。
+#   PAPERPLANE_MSBUILD   MSBuild.exe（可以是 Windows 自带的 Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe）
+#   PAPERPLANE_CSC_DIR   Roslyn 的 csc.exe 所在目录（NuGet: Microsoft.Net.Compilers.Toolset 的 tasks\net472）
+#   PAPERPLANE_REFASM    参考程序集目录（含 .NETFramework\v4.8）
 param(
     [switch]$Release,
     [switch]$Test,
@@ -66,13 +70,32 @@ $script:frameworkVersion = ""
 $msbuild = Find-MSBuild
 $refs = Find-RefAssemblies
 $props = @("/p:Configuration=$config", "/m", "/nologo", "/v:$Verbosity", "/t:$Target", "/clp:ErrorsOnly;Summary")
+if ($env:PAPERPLANE_CSC_DIR) {
+    if (-not (Test-Path (Join-Path $env:PAPERPLANE_CSC_DIR "csc.exe"))) { throw "PAPERPLANE_CSC_DIR 下没有 csc.exe：$env:PAPERPLANE_CSC_DIR" }
+    $props += "/p:CscToolPath=$($env:PAPERPLANE_CSC_DIR.TrimEnd('\'))", "/p:CscToolExe=csc.exe"
+}
+# Windows 自带的 MSBuild 4.x：不认识 ToolsVersion="Current"，也不一定能读新版 .sln，直接按 4.0 编译各工程
+$legacy = $msbuild -like "*\Microsoft.NET\Framework*\v4.0.30319\*"
+if ($legacy) {
+    if (-not $env:PAPERPLANE_CSC_DIR) { throw "Windows 自带的 MSBuild 只带 C# 5 编译器：用仓库根目录的 build.ps1（会准备新版 Roslyn），或装 Visual Studio Build Tools" }
+    $props += "/tv:4.0"
+}
 # 路径末尾的反斜杠会在传给 MSBuild 时吃掉引号，去掉后由 Common.props 补上
 if ($refs) { $props += "/p:PaperplaneRefAssemblies=$($refs.TrimEnd('\'))" }
 if ($script:frameworkVersion) { $props += "/p:TargetFrameworkVersion=$($script:frameworkVersion)" }
 if ($Version) { $props += "/p:PaperplaneVersion=$Version" }
 Write-Host "MSBuild: $msbuild"
-& $msbuild (Join-Path $here "LemonPaperplane.sln") @props
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($legacy) {
+    $projects = @("LemonPaperplane\LemonPaperplane.csproj")
+    if ($Test) { $projects += "PaperplaneKit.Tests\PaperplaneKit.Tests.csproj" }
+    foreach ($p in $projects) {
+        & $msbuild (Join-Path $here $p) @props
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+} else {
+    & $msbuild (Join-Path $here "LemonPaperplane.sln") @props
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 if ($Test) {
     $exe = Join-Path $here "PaperplaneKit.Tests\bin\$config\PaperplaneKit.Tests.exe"

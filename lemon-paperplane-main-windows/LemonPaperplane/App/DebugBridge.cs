@@ -181,7 +181,7 @@ public static class DebugBridge
             case "focus":
             {
                 var el = Find(req) ?? throw new ArgumentException("找不到元素");
-                bool ok = el is PPTextField tf ? tf.Focus() : (el is UIElement u && u.Focus());
+                bool ok = el is PPTextField tf ? tf.Focus() : el is PPTextArea ta ? ta.TextBox.Focus() : (el is UIElement u && u.Focus());
                 return new JObject { ["focused"] = ok, ["target"] = Describe(el) };
             }
             case "key":

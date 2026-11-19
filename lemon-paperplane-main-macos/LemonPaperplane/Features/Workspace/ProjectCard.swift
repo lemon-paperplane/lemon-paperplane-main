@@ -116,7 +116,7 @@ struct ProjectCard: View {
                 if let r = currentRun, RunState.isActive(r.state) {
                     HStack(spacing: M.md) {
                         if let url = r.urls.first {
-                            PPLink(title: Format.shortURL(url), mono: true, icon: "external-link") { Actions.openURL(url) }
+                            RunURLLinks(url: url, projectId: p.id, configId: r.configId)
                         } else {
                             Text(RunStatusStyle.title(r.state)).font(.pp(.small)).foregroundColor(theme.textSecondary)
                         }
@@ -192,12 +192,17 @@ enum CardMenu {
         let plugins = Set(p.facets.map(\.plugin))
         let actions = Actions.applicable(model.data.contributions.actions(at: ActionLocation.cardMenu), facets: facetIds, plugins: plugins)
         let others = model.data.workspaces.filter { $0.id != p.workspaceId }
-        var e: [MenuEntry] = [
-            .item(tr("card.open"), icon: "arrow-right") { model.nav.openProject(p.id) },
-            .item(tr("open.finder"), icon: "folder-open") { Actions.open(p.id, with: "finder") },
-            .item(tr("open.terminal"), icon: "square-terminal") { Actions.open(p.id, with: "terminal") },
-            .item(tr("open.idea"), icon: "code-xml") { Actions.open(p.id, with: "idea") },
-            .item(tr("open.vscode"), icon: "code-xml") { Actions.open(p.id, with: "vscode") },
+        var e: [MenuEntry] = [.item(tr("card.open"), icon: "arrow-right") { model.nav.openProject(p.id) }]
+        // 在访达中显示、用其他应用打开：只对本机有意义
+        if !model.isRemote {
+            e += [
+                .item(tr("open.finder"), icon: "folder-open") { Actions.open(p.id, with: "finder") },
+                .item(tr("open.terminal"), icon: "square-terminal") { Actions.open(p.id, with: "terminal") },
+                .item(tr("open.idea"), icon: "code-xml") { Actions.open(p.id, with: "idea") },
+                .item(tr("open.vscode"), icon: "code-xml") { Actions.open(p.id, with: "vscode") },
+            ]
+        }
+        e += [
             .item(tr("editorWindow.open"), icon: "file-pen") { EditorWindows.shared.open(projectId: p.id) },
             .divider,
         ]

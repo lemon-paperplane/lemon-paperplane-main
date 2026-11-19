@@ -102,6 +102,8 @@ public sealed class PPTextField : InputChrome
 
     public Action? OnSubmit { get; set; }
     public Action? OnEscape { get; set; }
+    /// <summary>在对话框里回车也只交给 OnSubmit，不按对话框的主按钮（路径栏回车跳转这类）。</summary>
+    public bool SubmitOverridesDialog { get; set; }
 
     /// <summary>文字变化（用户输入或 Text 赋值）。</summary>
     public event Action<string>? TextChanged;

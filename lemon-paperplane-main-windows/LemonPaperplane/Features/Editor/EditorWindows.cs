@@ -240,6 +240,7 @@ internal sealed class EditorWindow : Window
                 // 用户在网页的未保存提示里点了取消：窗口保持打开，宿主没有挂起的关闭状态需要恢复
                 break;
             case "reveal":
+                // 连着远程服务器时 RevealInExplorer 自己提示「不可用」
                 if ((string?)m["path"] is { } p) FileActions.RevealInExplorer(p, _projectPath);
                 break;
             case "openExternal":

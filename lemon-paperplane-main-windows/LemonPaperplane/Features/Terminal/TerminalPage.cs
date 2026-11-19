@@ -216,7 +216,7 @@ public sealed class TerminalPage : PPView
                 break;
             case "openExternal":
                 if ((string?)m["url"] is { } s && Uri.TryCreate(s, UriKind.Absolute, out var u) && (u.Scheme == "http" || u.Scheme == "https"))
-                    Actions.OpenURL(u.AbsoluteUri);
+                    Actions.OpenServerURL(u.AbsoluteUri);
                 break;
         }
     }
@@ -346,7 +346,7 @@ internal sealed class TerminalRow : Border
         var t = _t;
         var output = new List<MenuEntry> { MenuEntry.Item(L.T("terminal.rename"), () => TerminalActions.Rename(t), icon: "pencil") };
         if (t.Exited) output.Add(MenuEntry.Item(L.T("terminal.restart"), () => TerminalActions.Restart(t), icon: "rotate-ccw"));
-        output.Add(MenuEntry.Item(L.T("terminal.reveal"), () => Actions.RevealInExplorer(t.Cwd), icon: "folder-open"));
+        if (Actions.LocalOnlyAvailable) output.Add(MenuEntry.Item(L.T("terminal.reveal"), () => Actions.RevealInExplorer(t.Cwd), icon: "folder-open"));
         output.Add(MenuEntry.Divider);
         output.Add(MenuEntry.Item(L.T("terminal.close"), () => TerminalActions.Close(t), icon: "trash-2", destructive: true));
         return output;

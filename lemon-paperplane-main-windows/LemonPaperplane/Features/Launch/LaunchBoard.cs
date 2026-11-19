@@ -253,7 +253,7 @@ public sealed class LaunchBoardPage : PPView
         var statusBox = Box(status).W(156).Shrink(false);
 
         // 地址列在窗口窄时可以收缩（其余列定宽，各行对齐）
-        UIElement? url = active?.Urls.FirstOrDefault() is { } u ? new PPLink(Format.ShortURL(u), () => Actions.OpenURL(u), mono: true, icon: "external-link").Left() : null;
+        UIElement? url = active?.Urls.FirstOrDefault() is { } u ? RunAddress.Links(u, project.Id, config.Id, localIcon: "external-link", spacing: M.Sm).Left() : null;
         var urlBox = Box(url).W(150).Shrink();
         var resBox = Box(active != null ? new RunResourceText(active.Id, fallbackCpu: active.Cpu, fallbackRss: active.RssMB) : null).W(120).Shrink(false);
 
@@ -499,22 +499,13 @@ public sealed class AddCommandDialog : AsyncDialog
     {
         if (Project is not { } p) return;
         var cwd = _cwd.Value;
-        string start;
-        try { start = cwd.Length == 0 ? p.Path : (Path.IsPathRooted(cwd) ? cwd : Path.Combine(p.Path, cwd)); }
-        catch { start = p.Path; }
-        var chosen = ImportFlow.ChooseFolder(L.T("launch.addCommand.cwd"), start);
-        if (string.IsNullOrEmpty(chosen)) return;
-        string root, full;
-        try
+        // 路径是服务器上的：按服务器的分隔符拼接、比较（连着远程时不用本机的 System.IO.Path）
+        var start = cwd.Length == 0 ? p.Path : ServerFiles.IsAbsolute(cwd) ? cwd : ServerFiles.Join(p.Path, cwd);
+        ServerFiles.ChooseFolder(L.T("launch.addCommand.cwd"), start, chosen =>
         {
-            root = Path.GetFullPath(p.Path).TrimEnd('\\', '/');
-            full = Path.GetFullPath(chosen).TrimEnd('\\', '/');
-        }
-        catch { root = p.Path; full = chosen!; }
-        if (string.Equals(full, root, StringComparison.OrdinalIgnoreCase)) _cwd.Value = "";
-        else if (full.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase)) _cwd.Value = full.Substring(root.Length + 1);
-        else _cwd.Value = full;
-        _cwdField?.Sync();
+            _cwd.Value = ServerFiles.Relative(p.Path, chosen) ?? chosen;
+            _cwdField?.Sync();
+        });
     }
 
     private void Submit()

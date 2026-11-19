@@ -147,12 +147,11 @@ public static class VCSPath
         return i <= 0 ? "" : n.Substring(i + 1).ToLowerInvariant();
     }
 
-    /// <summary>仓库根（本机路径）+ 仓库内相对路径 → 本机绝对路径</summary>
+    /// <summary>仓库根（服务器路径）+ 仓库内相对路径 → 绝对路径（按服务器的分隔符；连着远程服务器时不用本机的 System.IO.Path）</summary>
     public static string Join(string root, string rel)
     {
         if (string.IsNullOrEmpty(rel)) return root;
-        try { return Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar))); }
-        catch { return root + Path.DirectorySeparatorChar + rel.Replace('/', Path.DirectorySeparatorChar); }
+        return ServerPath.Join(root, rel, AppModel.Shared.PathSeparator);
     }
 
     public static readonly HashSet<string> ImageExtensions = new() { "png", "jpg", "jpeg", "gif", "bmp", "webp", "tif", "tiff", "ico", "icns", "heic" };

@@ -1,0 +1,28 @@
+# 柠檬纸飞机服务器（Linux 无头版）systemd 单元。
+# 安装：见 README.md「开机自动运行」。把 User= 换成实际使用的普通用户（工程、工具链都在这个用户下）。
+[Unit]
+Description=Lemon Paperplane server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=paperplane
+ExecStart=/usr/local/bin/paperplane serve
+Restart=on-failure
+RestartSec=3
+# 停止时内核会先优雅停掉托管的工程
+KillMode=mixed
+TimeoutStopSec=30
+# 加固：不能提权、独立 /tmp、系统目录只读
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

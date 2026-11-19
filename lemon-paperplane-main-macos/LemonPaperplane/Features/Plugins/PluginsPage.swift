@@ -77,6 +77,11 @@ struct PluginsPage: View {
     }
 
     private func installFromFile() {
+        // 插件装在当前服务器上：连着远程服务器时选服务器上的插件包或文件夹
+        if AppModel.shared.isRemote {
+            PathPicker.choose(title: tr("plugin.installFromFile"), kind: .any, allowedExtensions: ["zip"]) { path in install(path) }
+            return
+        }
         let p = NSOpenPanel()
         p.canChooseFiles = true
         p.canChooseDirectories = true
@@ -84,8 +89,12 @@ struct PluginsPage: View {
         p.allowedContentTypes = [.zip, .folder]
         p.message = tr("plugin.installFromFile")
         guard p.runModal() == .OK, let url = p.url else { return }
+        install(url.path)
+    }
+
+    private func install(_ path: String) {
         AppModel.shared.perform(tr("plugin.installFailed")) { api in
-            let info = try await api.installPlugin(path: url.path)
+            let info = try await api.installPlugin(path: path)
             await AppModel.shared.reloadPlugins()
             selected = info.id
             tab = .installed

@@ -252,7 +252,7 @@ struct RunConsoleArea: View {
             }
             .padding(.horizontal, M.sm)
             ForEach(run.urls.prefix(2), id: \.self) { u in
-                PPLink(title: Format.shortURL(u), mono: true, icon: "external-link") { Actions.openURL(u) }
+                RunURLLinks(url: u, projectId: run.projectId, configId: run.configId)
                     .padding(.trailing, M.sm)
             }
             if active {

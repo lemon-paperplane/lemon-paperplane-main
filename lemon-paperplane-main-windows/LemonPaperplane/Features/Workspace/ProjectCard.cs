@@ -134,7 +134,7 @@ public sealed class ProjectCard : PPView
         if (CurrentRun is { } r && RunState.IsActive(r.State))
         {
             UIElement address = r.Urls.FirstOrDefault() is { } url
-                ? new PPLink(Format.ShortURL(url), () => Actions.OpenURL(url), mono: true, icon: "external-link").Shrink()
+                ? RunAddress.Links(url, _p.Id, r.ConfigId, localIcon: "external-link")
                 : Text(RunStatusStyle.Title(r.State), Typo.Small, ColorToken.TextSecondary);
             // 只有这一小块随 stats 重绘（每个运行一个可观察对象），卡片本身不动
             var started = _runs.Runs.TryGetValue(r.Id, out var full) ? full.StartedAt : null;
@@ -175,16 +175,11 @@ public static class CardMenu
         var plugins = new HashSet<string>(p.Facets.Select(f => f.Plugin));
         var actions = Actions.Applicable(model.Data.Contributions.ActionsAt(ActionLocation.CardMenu), facetIds, plugins);
         var others = model.Data.Workspaces.Where(w => w.Id != p.WorkspaceId).ToList();
-        var e = new List<MenuEntry>
-        {
-            MenuEntry.Item(L.T("card.open"), () => model.Nav.OpenProject(p.Id), icon: "arrow-right"),
-            MenuEntry.Item(L.T("open.finder"), () => Actions.Open(p.Id, "finder"), icon: "folder-open"),
-            MenuEntry.Item(L.T("open.terminal"), () => Actions.Open(p.Id, "terminal"), icon: "square-terminal"),
-            MenuEntry.Item(L.T("open.idea"), () => Actions.Open(p.Id, "idea"), icon: "code-xml"),
-            MenuEntry.Item(L.T("open.vscode"), () => Actions.Open(p.Id, "vscode"), icon: "code-xml"),
-            MenuEntry.Item(L.T("editorWindow.open"), () => EditorWindows.Shared.Open(p.Id), icon: "file-pen"),
-            MenuEntry.Divider,
-        };
+        var e = new List<MenuEntry> { MenuEntry.Item(L.T("card.open"), () => model.Nav.OpenProject(p.Id), icon: "arrow-right") };
+        // 在资源管理器 / 终端 / IDE 中打开是在服务器上打开：连着远程服务器时隐藏
+        e.AddRange(Actions.OpenWithEntries(p.Id));
+        e.Add(MenuEntry.Item(L.T("editorWindow.open"), () => EditorWindows.Shared.Open(p.Id), icon: "file-pen"));
+        e.Add(MenuEntry.Divider);
         if (p.HasActiveRun) e.Add(MenuEntry.Item(L.T("card.stopAll"), () => Actions.StopProject(p.Id), icon: "square"));
         e.Add(MenuEntry.Item(L.T("project.reimport"), () => Actions.Reimport(p.Id), icon: "refresh-cw"));
         if (actions.Count > 0)

@@ -97,15 +97,12 @@ private struct ToolchainKindSection: View {
     }
 
     private func addPath() {
-        let p = NSOpenPanel()
-        p.canChooseDirectories = true
-        p.canChooseFiles = true
-        p.allowsMultipleSelection = false
-        p.message = tr("toolchain.addPath")
-        guard p.runModal() == .OK, let url = p.url else { return }
-        AppModel.shared.perform(tr("toolchain.addPath")) { api in
-            _ = try await api.addToolchain(kind: kind.kind, path: url.path)
-            await AppModel.shared.reloadToolchains()
+        let k = kind.kind
+        PathPicker.choose(title: tr("toolchain.addPath"), kind: .any) { path in
+            AppModel.shared.perform(tr("toolchain.addPath")) { api in
+                _ = try await api.addToolchain(kind: k, path: path)
+                await AppModel.shared.reloadToolchains()
+            }
         }
     }
 }
@@ -124,7 +121,12 @@ private struct ToolchainRow: View {
                     if toolchain.managed { PPBadge(text: tr("toolchain.managed"), tone: "info") }
                     if let s = toolchain.source, !s.isEmpty, !toolchain.managed { PPBadge(text: s) }
                 }
-                PPLink(title: Format.abbreviatePath(toolchain.path), mono: true) { Actions.revealInFinder(toolchain.path) }
+                if Actions.isRemote {
+                    Text(Format.abbreviatePath(toolchain.path)).font(.pp(.monoSmall)).foregroundColor(theme.textSecondary)
+                        .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                } else {
+                    PPLink(title: Format.abbreviatePath(toolchain.path), mono: true) { Actions.revealInFinder(toolchain.path) }
+                }
             }
             Spacer(minLength: M.md)
             PPIconButton("copy", help: tr("toolchain.copyPath"), size: M.iconButtonSmall) { Actions.copy(toolchain.path) }

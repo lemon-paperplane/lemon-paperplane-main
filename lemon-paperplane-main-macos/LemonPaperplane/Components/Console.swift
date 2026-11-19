@@ -43,6 +43,8 @@ final class ConsoleController: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var pinScheduled = false
     private static let urlRegex = try? NSRegularExpression(pattern: "https?://[^\\s\"'<>\\x1b]+", options: [])
+    /// 日志里的地址：连着远程服务器时 localhost 地址先转发到本机再打开
+    private let linkDelegate = ConsoleLinkDelegate()
 
     init() {
         let sv = NSScrollView()
@@ -67,6 +69,7 @@ final class ConsoleController: ObservableObject {
         sv.documentView = tv
         scrollView = sv
         textView = tv
+        tv.delegate = linkDelegate
         applyWrap()
         // 跟随末尾的开关只由用户自己的滚动决定（触控板/滚轮/拖滚动条会发 live scroll 通知，程序滚动不会）。
         // 以前监听 bounds 变化并异步判断：程序滚到底后新行/排版又改变了高度，会被误判成「用户离开了底部」而关掉跟随
@@ -497,7 +500,8 @@ struct ConsolePanel<Leading: View>: View {
                 if let runId { AppModel.shared.perform { api in try await api.clearRun(runId) } }
                 c.clearLocal()
             }
-            if let logFile, !logFile.isEmpty, !compact {
+            // 日志文件在服务器上：连着远程服务器时不显示
+            if let logFile, !logFile.isEmpty, !compact, !Actions.isRemote {
                 PPIconButton("file-text", help: tr("console.openLog")) { Actions.openFile(logFile) }
             }
         }
@@ -543,5 +547,19 @@ struct ConsolePanel<Leading: View>: View {
 extension ConsolePanel where Leading == EmptyView {
     init(consoleId: String?, runId: String?, logFile: String?, compact: Bool = false, inputEnabled: Bool = false) {
         self.init(consoleId: consoleId, runId: runId, logFile: logFile, compact: compact, inputEnabled: inputEnabled) { EmptyView() }
+    }
+}
+
+/// 控制台链接点击：连着远程服务器时，日志里的 localhost / 127.0.0.1 地址指的是服务器上的端口，
+/// 先经网关转发到本机再打开；其余交给系统默认处理
+final class ConsoleLinkDelegate: NSObject, NSTextViewDelegate {
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        let s = (link as? URL)?.absoluteString ?? (link as? String) ?? ""
+        guard !s.isEmpty, ServerURL.loopbackPort(s) != nil else { return false }
+        return MainActor.assumeIsolated {
+            guard AppModel.shared.isRemote else { return false }
+            RemoteLinkActions.openForwarded(s)
+            return true
+        }
     }
 }

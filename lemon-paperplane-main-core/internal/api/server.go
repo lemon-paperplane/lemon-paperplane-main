@@ -48,6 +48,7 @@ type Server struct {
 	EditorDir string // 编辑器网页目录
 	srv       *http.Server
 	ln        net.Listener
+	mux       http.Handler
 }
 
 // NewToken 生成随机 token。
@@ -74,8 +75,25 @@ func (s *Server) Listen(port int) error {
 // Base 返回 API 根地址。
 func (s *Server) Base() string { return fmt.Sprintf("http://127.0.0.1:%d", s.Port) }
 
+// Handler 返回不含本机令牌校验的接口路由（远程监听在外面套自己的认证）。
+func (s *Server) Handler() http.Handler {
+	if s.mux == nil {
+		s.mux = s.routes()
+	}
+	return s.mux
+}
+
 // Serve 阻塞提供服务。
 func (s *Server) Serve() error {
+	s.srv = &http.Server{Handler: s.guard(s.Handler()), ReadHeaderTimeout: 10 * time.Second}
+	err := s.srv.Serve(s.ln)
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
+}
+
+func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/call/", s.handleCall)
 	mux.HandleFunc("/api/v1/ops", s.handleOps)
@@ -94,12 +112,7 @@ func (s *Server) Serve() error {
 			_ = pprof.Lookup("goroutine").WriteTo(w, 2)
 		})
 	}
-	s.srv = &http.Server{Handler: s.guard(mux), ReadHeaderTimeout: 10 * time.Second}
-	err := s.srv.Serve(s.ln)
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
+	return mux
 }
 
 // Shutdown 关闭服务。
@@ -156,8 +169,20 @@ func writeErrData(w http.ResponseWriter, status int, code, msg string, data any)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": apiError{Code: code, Message: msg, Data: data}})
 }
 
+// codedError 是自带错误码的错误（远程网关等）。
+type codedError interface {
+	error
+	Code() string
+	Status() int
+	Data() any
+}
+
 // ErrorData 取插件错误里的结构化 data。
 func ErrorData(err error) any {
+	var ce codedError
+	if errors.As(err, &ce) {
+		return ce.Data()
+	}
 	var re *sdk.Error
 	if errors.As(err, &re) {
 		return re.Data
@@ -167,6 +192,10 @@ func ErrorData(err error) any {
 
 // ErrorInfo 把错误映射为 HTTP 状态与错误码。
 func ErrorInfo(err error) (int, string, string) {
+	var ce codedError
+	if errors.As(err, &ce) {
+		return ce.Status(), ce.Code(), ce.Error()
+	}
 	var ue *engine.UserError
 	var br *ops.BadRequest
 	var re *sdk.Error
