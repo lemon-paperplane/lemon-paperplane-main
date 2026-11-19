@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <Import Project="..\build\Common.props" />
+  <PropertyGroup>
+    <ProjectGuid>{F6F7B759-D799-4A1A-B883-7B750E2A2EB1}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <RootNamespace>PaperplaneKit</RootNamespace>
+    <AssemblyName>PaperplaneKit</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(VendorDir)Newtonsoft.Json\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
+    <Compile Include="..\build\Polyfills.cs" Link="Polyfills.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 三端共用资源：文案、设计变量、图标、品牌图形（运行时从程序集资源读取） -->
+    <EmbeddedResource Include="$(SharedDir)i18n\*.json" LogicalName="shared/i18n/%(Filename)%(Extension)" />
+    <!-- Windows 文案覆盖（访达 → 资源管理器等），加载时盖在基础文案上 -->
+    <EmbeddedResource Include="$(SharedDir)i18n\windows\*.json" LogicalName="shared/i18n/windows/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(SharedDir)design-tokens.json" LogicalName="shared/design-tokens.json" />
+    <EmbeddedResource Include="$(SharedDir)icons\*.svg" LogicalName="shared/icons/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(SharedDir)branding\*.svg" LogicalName="shared/branding/%(Filename)%(Extension)" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

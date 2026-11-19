@@ -14,7 +14,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { ansi, colors, fonts } from "./gen/tokens";
-import { fontStack, isMac, platform } from "./util";
+import { fontStack, isMac, isWindows, platform } from "./util";
 
 type Msg = Record<string, unknown> & { type: string };
 
@@ -28,10 +28,26 @@ function post(m: Msg) {
   }
 }
 
+/** 复制到剪贴板（Windows 上 Ctrl+C 复制选中的终端文字） */
+function copyText(text: string) {
+  navigator.clipboard?.writeText(text).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    current?.term.focus();
+  });
+}
+
 const params = new URLSearchParams(location.hash.slice(1));
 const token = params.get("token") ?? "";
 let scheme: "light" | "dark" = params.get("theme") === "dark" ? "dark" : "light";
 document.documentElement.dataset.theme = scheme;
+document.documentElement.dataset.platform = platform;
 const fontFamily = fontStack((fonts.mono as any)[platform] ?? "", "monospace");
 const fontSize = Number(params.get("fontSize")) || 12;
 
@@ -102,8 +118,8 @@ class Term {
     });
     this.term.loadAddon(this.fit);
     this.term.loadAddon(new WebLinksAddon((ev, uri) => {
-      // 和系统终端一样：⌘ 点击才打开，普通点击留给选择文字
-      if (!isMac || ev.metaKey) post({ type: "openExternal", url: uri });
+      // 和系统终端一样：⌘ 点击才打开（Windows 上和 Windows Terminal 一样 Ctrl 点击），普通点击留给选择文字
+      if (isMac ? ev.metaKey : isWindows ? ev.ctrlKey : true) post({ type: "openExternal", url: uri });
     }));
     const u = new Unicode11Addon();
     this.term.loadAddon(u);
@@ -118,11 +134,27 @@ class Term {
     this.term.textarea?.addEventListener("blur", () => post({ type: "focus", value: false }));
   }
 
-  /** macOS 上和系统终端 / VS Code 一致的快捷键：⌘K 清屏，⌘←/→ 行首行尾，⌥←/→ 按词移动，⌘⌫ 删到行首，⌥⌫ 删词 */
+  /**
+   * macOS 上和系统终端 / VS Code 一致的快捷键：⌘K 清屏，⌘←/→ 行首行尾，⌥←/→ 按词移动，⌘⌫ 删到行首，⌥⌫ 删词。
+   * Windows 上和 Windows Terminal 一致：有选中文字时 Ctrl+C 复制（没有时照常发 ^C 中断），Ctrl+V 粘贴，
+   * Ctrl+Shift+C / Ctrl+Shift+V 复制 / 粘贴，Ctrl+Shift+K 清屏。
+   */
   private keys(e: KeyboardEvent): boolean {
     if (e.type !== "keydown") return true;
     const mod = isMac ? e.metaKey : e.ctrlKey && e.shiftKey;
     if (mod && e.key.toLowerCase() === "k") { this.term.clear(); return false; }
+    if (isWindows && e.ctrlKey && !e.altKey && !e.metaKey) {
+      const k = e.key.toLowerCase();
+      if (k === "c" && (e.shiftKey || this.term.hasSelection())) {
+        e.preventDefault();
+        const text = this.term.getSelection();
+        if (text) copyText(text);
+        if (!e.shiftKey) this.term.clearSelection();
+        return false;
+      }
+      // 不让 xterm 把 Ctrl+V 当成 ^V 发出去：交给浏览器的粘贴事件（xterm 自己处理粘贴，含括号粘贴模式）
+      if (k === "v") return false;
+    }
     if (!isMac) return true;
     const seq = (s: string) => { e.preventDefault(); this.input(s); return false; };
     if (e.metaKey && !e.altKey && !e.ctrlKey) {

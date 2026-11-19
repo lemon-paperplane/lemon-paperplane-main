@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -537,8 +536,7 @@ func moveToTrash(abs string) error {
 		trash := filepath.Join(home, ".Trash")
 		return os.Rename(abs, uniqueName(trash, filepath.Base(abs)))
 	case "windows":
-		ps := `Add-Type -AssemblyName Microsoft.VisualBasic; $p=$args[0]; if (Test-Path -LiteralPath $p -PathType Container) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p,'OnlyErrorDialogs','SendToRecycleBin') } else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p,'OnlyErrorDialogs','SendToRecycleBin') }`
-		return exec.Command("powershell", "-NoProfile", "-Command", ps, abs).Run()
+		return recycleWindows(abs)
 	default:
 		// freedesktop 回收站规范
 		base := os.Getenv("XDG_DATA_HOME")

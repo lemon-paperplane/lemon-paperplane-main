@@ -44,6 +44,8 @@ for dir in "$ROOT"/lemon-paperplane-plugin-*; do
   [ -f "$dir/plugin.json" ] || continue
   read -r id exe < <(python3 -c "import json,sys;m=json.load(open(sys.argv[1]));print(m['id'],m.get('executable',''))" "$dir/plugin.json")
   case " $STORE_ONLY " in *" $id "*) continue ;; esac
+  # 插件声明了 os 且不含目标系统（如 iOS 插件只在 macOS 上）：不打包
+  python3 -c "import json,sys;m=json.load(open(sys.argv[1]));o=m.get('os') or [];sys.exit(0 if not o or sys.argv[2] in o else 1)" "$dir/plugin.json" "$GOOS_" || continue
   # 纯声明插件（没有 executable）：只整理文件，不进多入口二进制
   if [ -z "$exe" ]; then
     IDS+=("$id:$dir")
@@ -128,7 +130,8 @@ for entry in "${IDS[@]}"; do
   if [ -z "$exe" ]; then
     rmdir "$dst/bin"
   elif [ "$GOOS_" = "windows" ]; then
-    cp "$OUT/paperplane-plugins.exe" "$dst/bin/$exe.exe"
+    # Windows 没有符号链接：写一个指向多入口程序的 .bundled 文件，内核用插件 id 作参数启动它
+    printf '%s' "$LINK.exe" > "$dst/bin/$exe.bundled"
   else
     ln -s "$LINK" "$dst/bin/$exe"
   fi

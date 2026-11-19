@@ -8,4 +8,6 @@ require (
 	golang.org/x/text v0.21.0
 )
 
+require golang.org/x/sys v0.29.0 // indirect
+
 replace github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-plugin-sdk => ../lemon-paperplane-main-plugin-sdk

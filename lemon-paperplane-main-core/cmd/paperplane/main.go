@@ -39,6 +39,10 @@ import (
 var Version = "0.1.0"
 
 func main() {
+	// Windows：本程序也是「停止运行」时发 Ctrl+C 的辅助进程
+	if proc.RunHelper(os.Args) {
+		return
+	}
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(2)
@@ -64,6 +68,8 @@ func main() {
 		err = runRun(args)
 	case "stop":
 		err = runStop(args)
+	case "shutdown":
+		err = runShutdown()
 	case "logs":
 		err = runLogs(args)
 	case "plugin":
@@ -93,6 +99,7 @@ Usage:
   paperplane import <path> [-w workspace] import a folder
   paperplane run <project> [config]       start and follow logs (Ctrl-C detaches, does not stop)
   paperplane stop <project|runId>         stop runs
+  paperplane shutdown                     stop the running daemon and all runs (never starts one)
   paperplane logs <project|runId> [-f] [-n 200]
   paperplane call <op> ['<json>']         call any operation
   paperplane ops                          list operations
@@ -163,7 +170,7 @@ func runDaemon(args []string) error {
 		cmd.Stdout, cmd.Stderr = logf, logf
 		cmd.Env = append(os.Environ(), "PAPERPLANE_DETACHED=1")
 		proc.PrepareDetached(cmd)
-		if err := cmd.Start(); err != nil {
+		if err := proc.StartDetached(cmd); err != nil {
 			return err
 		}
 		for i := 0; i < 150; i++ {
@@ -176,6 +183,7 @@ func runDaemon(args []string) error {
 		return errors.New("daemon did not start in time, see " + filepath.Join(layout.Logs, "daemon.log"))
 	}
 
+	proc.PrepareDaemon()
 	// 省内存：限制 Go 堆、更积极的 GC
 	debug.SetMemoryLimit(96 << 20)
 	debug.SetGCPercent(50)
@@ -241,7 +249,11 @@ func runDaemon(args []string) error {
 
 // loadShellEnv 从用户的登录 shell 取环境变量（图形界面启动的进程拿不到 ~/.zshrc 里的 PATH 等），与 VS Code 的做法相同。
 func loadShellEnv(logger *log.Logger) {
-	if runtime.GOOS == "windows" || os.Getenv("PAPERPLANE_NO_SHELL_ENV") != "" {
+	if runtime.GOOS == "windows" {
+		loadRegistryEnv(logger)
+		return
+	}
+	if os.Getenv("PAPERPLANE_NO_SHELL_ENV") != "" {
 		return
 	}
 	shell := os.Getenv("SHELL")
@@ -310,6 +322,26 @@ func ping(rt api.Runtime) bool {
 }
 
 // ensureDaemon 返回运行中的 daemon；没有就拉起。
+// runShutdown 停掉正在运行的内核与全部运行（安装包升级 / 卸载前用）；没有内核在跑时什么也不做，也不会拉起新的。
+func runShutdown() error {
+	rt, err := readRuntime()
+	if err != nil || !ping(rt) {
+		fmt.Println("daemon not running")
+		return nil
+	}
+	c := &client{rt: rt, hc: &http.Client{Timeout: 15 * time.Second}}
+	_ = c.call("system.shutdown", map[string]bool{"stopRuns": true}, nil)
+	for i := 0; i < 150 && proc.Alive(rt.PID); i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if proc.Alive(rt.PID) {
+		proc.KillGroup(rt.PID)
+		_ = proc.Kill(rt.PID)
+	}
+	fmt.Printf("daemon stopped (pid %d)\n", rt.PID)
+	return nil
+}
+
 func ensureDaemon() (api.Runtime, error) {
 	if rt, err := readRuntime(); err == nil && ping(rt) {
 		return rt, nil

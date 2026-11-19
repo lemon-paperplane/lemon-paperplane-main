@@ -1,4 +1,6 @@
 // 文案：dist/i18n/<locale>.json（构建时从 shared/i18n 摘出 editor.* 与少量 common.*）。
+// Windows 上再叠加 dist/i18n/windows/<locale>.json（废纸篓 → 回收站这类平台说法），Mac/Linux 不读。
+import { isWindows } from "./util";
 
 let dict: Record<string, string> = {};
 let current = "en";
@@ -9,15 +11,25 @@ export function normalizeLocale(l?: string | null): string {
   return /^zh/i.test(l) ? "zh-Hans" : "en";
 }
 
+async function fetchDict(url: string): Promise<Record<string, string> | null> {
+  try {
+    const res = await fetch(url);
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadLocale(l?: string | null): Promise<void> {
   const loc = normalizeLocale(l);
-  try {
-    const res = await fetch(`i18n/${loc}.json`);
-    if (res.ok) {
-      dict = await res.json();
-      current = loc;
-    }
-  } catch { /* 保留原文案 */ }
+  const [base, overlay] = await Promise.all([
+    fetchDict(`i18n/${loc}.json`),
+    isWindows ? fetchDict(`i18n/windows/${loc}.json`) : Promise.resolve(null),
+  ]);
+  if (base) {
+    dict = overlay ? { ...base, ...overlay } : base;
+    current = loc;
+  }
   document.documentElement.lang = current;
   for (const f of listeners) f();
 }

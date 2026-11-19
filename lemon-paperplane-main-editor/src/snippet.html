@@ -14,6 +14,10 @@
   #root .cm-content { padding: 6px 0; }
   #root .cm-gutters { background: transparent; border-right: none; }
   #root .cm-placeholder { color: var(--c-textTertiary); }
+  /* Windows：和编辑窗口一样的细滚动条（经典滚动条带箭头）；Mac 是浮动滚动条 */
+  [data-platform="windows"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+  [data-platform="windows"] ::-webkit-scrollbar-thumb { background: var(--c-scrollbar); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+  [data-platform="windows"] ::-webkit-scrollbar-track, [data-platform="windows"] ::-webkit-scrollbar-corner { background: transparent; }
 </style>
 </head>
 <body>

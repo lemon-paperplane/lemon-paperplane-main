@@ -1,0 +1,27 @@
+Lemon Paperplane for Windows — third-party software
+====================================================
+
+Newtonsoft.Json 13.0.3 — MIT License
+Copyright (c) 2007 James Newton-King
+https://github.com/JamesNK/Newtonsoft.Json
+
+Microsoft.Web.WebView2 1.0.4314.35 — Microsoft WebView2 SDK license (see Vendor/WebView2/LICENSE.txt in the source repository)
+https://www.nuget.org/packages/Microsoft.Web.WebView2
+
+Lucide icons — ISC License
+Copyright (c) Lucide Icons and Contributors
+https://lucide.dev
+
+CodeMirror 6 and Lezer — MIT License
+Copyright (C) 2018-2021 by Marijn Haverbeke and others
+https://codemirror.net
+
+xterm.js and addons — MIT License
+Copyright (c) 2017-2019, The xterm.js authors
+https://xtermjs.org
+
+@replit/codemirror-vim, @replit/codemirror-emacs — MIT License
+Copyright (c) Replit
+
+The full license texts are in the source repository:
+https://github.com/lemon-paperplane/lemon-paperplane-main

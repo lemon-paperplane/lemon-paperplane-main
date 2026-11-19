@@ -1,9 +1,41 @@
 # Lemon Paperplane — Windows
 
-下一轮实现。已定口径：
+柠檬纸飞机的 Windows 界面：WPF + .NET Framework 4.8，和 macOS 版功能、布局、配色、图标、文案一致。内核与插件复用 Go 版本（`GOOS=windows` 交叉编译）。
 
-- WPF + .NET Framework 4.8（Windows 10 1903 起与 Windows 11 系统自带运行库，安装包只有几 MB），C# 新语法通过 `LangVersion=latest` 使用。
-- 界面与 macOS 版一致：照 `../docs/design-system.md` 与 `../shared/design-tokens.json` 实现同一套自绘控件；图标用 `../shared/icons/` 的 SVG（WPF 的 Geometry 路径语法与 SVG path 基本一致，写一个子集渲染器）。
-- 文案用 `../shared/i18n/*.json`。
-- 内核与插件复用 Go 版本：`GOOS=windows` 交叉编译 `paperplane.exe` 与 `paperplane-plugins.exe`；内核里 Windows 相关的待补项：Job Object 管理进程树、toolhelp32 统计进程资源、系统语言读取、askpass 的 .cmd 包装。
-- 安装包：Inno Setup 或 MSIX（下一轮定）。
+- 系统要求：Windows 10 1809+ / Windows 11（x64、ARM64）；.NET Framework 4.8（Windows 10 1903 起自带）；编辑窗口、终端需要 WebView2 运行时（Windows 11 自带，缺少时界面里给下载入口）。
+- 安装：装到当前用户（`%LOCALAPPDATA%\Programs\Lemon Paperplane`），不需要管理员权限；数据在 `%APPDATA%\LemonPaperplane`。关闭主窗口收到托盘，服务继续运行；托盘菜单「退出并停止全部服务」才全部停止。
+
+## 目录
+
+| 路径 | 内容 |
+|---|---|
+| `PaperplaneKit/` | 数据与接口层（对应 Mac 的 PaperplaneKit） |
+| `PaperplaneKit.Tests/` | 单元测试（自带运行器，`build.ps1 -Test`） |
+| `LemonPaperplane/` | 界面：`App`（入口、窗口、调试桥）、`Core`（AppModel、Stores、Actions）、`Design`、`Components`、`Renderers`、`Features/<区域>` |
+| `Vendor/` | 第三方库（Newtonsoft.Json、WebView2），随仓库提交 |
+| `installer/` | Inno Setup 安装包脚本 |
+| `build.ps1` / `package.ps1` | 编译 / 打包 |
+
+开发约定、组件 API、测试方法见 [PORTING.md](PORTING.md) 与 [LemonPaperplane/Components/README.md](LemonPaperplane/Components/README.md)。
+
+## 编译
+
+需要 Visual Studio 2022+ 或 Build Tools（MSBuild），或挂载的 EWDK。没有 .NET Framework 4.8 目标包时 `build.ps1` 自动下载参考程序集。
+
+```powershell
+.\build.ps1            # Debug
+.\build.ps1 -Test      # 编译并跑测试
+.\build.ps1 -Release
+```
+
+开发时界面用环境变量 `PAPERPLANE_BIN` 指向 Windows 版内核、`PAPERPLANE_DATA_DIR` 隔离数据目录；`PAPERPLANE_DEBUG_BRIDGE=<管道名>` 打开调试桥（截图、点击、导航，见 `LemonPaperplane/App/DebugBridge.cs`）。
+
+## 发布包
+
+在 Mac 上一条命令（交叉编译 x64 / ARM64 内核与插件 → 构建编辑器网页 → 到 Windows 编译机编译界面、打 zip 和安装包 → 取回）：
+
+```bash
+WINDOWS_BUILD_HOST=user@host ../scripts/build-windows.sh 0.1.0
+```
+
+产物在 `../dist/windows/`：`LemonPaperplane-<版本>-windows-<x64|arm64>-setup.exe` 与 `.zip`。编译机需要 OpenSSH 服务、MSBuild（或 EWDK）、Inno Setup 6。也可以在 Windows 上直接跑 `package.ps1`（内核目录先用 `../scripts/build-windows-runtime.sh` 生成）。

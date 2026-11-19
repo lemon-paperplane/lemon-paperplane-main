@@ -230,3 +230,18 @@ func IsSystemProcess(pid int) bool {
 	}
 	return false
 }
+
+// Started 在 Unix 上无事可做（进程组在 Prepare 里已经设好）。
+func Started(cmd *exec.Cmd) {}
+
+// StartedPID 在 Unix 上无事可做。
+func StartedPID(pid int) {}
+
+// StartDetached 启动 PrepareDetached 准备好的进程。
+func StartDetached(cmd *exec.Cmd) error { return cmd.Start() }
+
+// PrepareDaemon 在 Unix 上无事可做。
+func PrepareDaemon() {}
+
+// RunHelper 只有 Windows 有辅助进程。
+func RunHelper(args []string) bool { return false }

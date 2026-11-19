@@ -118,11 +118,17 @@ function genIcons() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. 文案：shared/i18n 里 editor.* 与少量 common.* → dist/i18n/<locale>.json
+// 3. 文案：shared/i18n 里 editor.* 与少量 common.* → dist/i18n/<locale>.json；
+//    Windows 的说法（shared/i18n/windows：废纸篓 → 回收站等）→ dist/i18n/windows/<locale>.json，网页在 Windows 上叠加
 const COMMON_KEYS = ["common.cancel", "common.close", "common.copy", "common.copied", "common.create", "common.delete", "common.ok", "common.save", "common.saved", "common.failed", "common.more", "common.name", "common.filter"];
 function copyI18n() {
-  const dir = path.join(SHARED, "i18n");
-  fs.mkdirSync(path.join(DIST, "i18n"), { recursive: true });
+  copyI18nDir(path.join(SHARED, "i18n"), path.join(DIST, "i18n"));
+  copyI18nDir(path.join(SHARED, "i18n", "windows"), path.join(DIST, "i18n", "windows"));
+}
+
+function copyI18nDir(dir, out) {
+  if (!fs.existsSync(dir)) return;
+  fs.mkdirSync(out, { recursive: true });
   for (const f of fs.readdirSync(dir)) {
     if (!f.endsWith(".json")) continue;
     const all = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
@@ -130,7 +136,7 @@ function copyI18n() {
     for (const [k, v] of Object.entries(all)) {
       if (k.startsWith("editor.") || COMMON_KEYS.includes(k)) sub[k] = v;
     }
-    fs.writeFileSync(path.join(DIST, "i18n", f), JSON.stringify(sub));
+    fs.writeFileSync(path.join(out, f), JSON.stringify(sub));
   }
 }
 

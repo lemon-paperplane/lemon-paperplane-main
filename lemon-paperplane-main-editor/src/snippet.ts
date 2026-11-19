@@ -12,6 +12,8 @@ import { closeBrackets } from "@codemirror/autocomplete";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { powerShell } from "@codemirror/legacy-modes/mode/powershell";
 import { paperplaneTheme } from "./theme";
+import { fontStack, isMac, platform } from "./util";
+import { fonts } from "./gen/tokens";
 
 type Msg = { type: string; value?: unknown };
 
@@ -28,6 +30,9 @@ const langs: Record<string, () => any> = {
 };
 let theme: "light" | "dark" = params.get("theme") === "dark" ? "dark" : "light";
 document.documentElement.dataset.theme = theme;
+document.documentElement.dataset.platform = platform;
+// Windows / Linux 上 ui-monospace 不生效（中文 Windows 会落到新宋体）：按设计变量取等宽字体；Mac 仍用 ui-monospace
+if (!isMac) document.documentElement.style.setProperty("--font-mono", fontStack((fonts.mono as any)[platform] ?? "", "monospace"));
 const themeC = new Compartment();
 
 const view = new EditorView({

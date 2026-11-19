@@ -61,6 +61,9 @@ func (e *Engine) findVCSRoots(root string) []model.VCSRoot {
 		}
 		seen[dir] = true
 		rel, _ := filepath.Rel(root, dir)
+		if rel == "." {
+			rel = "" // 主仓库统一给 ""（界面按「空 = 工程根」拼路径，给 "." 会拼出 ./src/x）
+		}
 		out = append(out, model.VCSRoot{Path: dir, RelPath: filepath.ToSlash(rel), VCS: p.Manifest.Contributes.VCS.ID, Plugin: p.ID()})
 	}
 	for _, p := range e.vcsPlugins() {
@@ -344,7 +347,7 @@ type VCSRepoOverview struct {
 	ProjectID   string          `json:"projectId"`
 	ProjectName string          `json:"projectName"`
 	Root        string          `json:"root"`    // 仓库绝对路径（调 vcs.* 时作为 root 传）
-	RelPath     string          `json:"relPath"` // 相对工程根，主仓库为 "" 或 "."，工程在仓库子目录时为 ".."
+	RelPath     string          `json:"relPath"` // 相对工程根，主仓库为 ""，工程在仓库子目录时为 ".."
 	Name        string          `json:"name"`    // 显示名：仓库目录名
 	VCS         string          `json:"vcs"`
 	Status      json.RawMessage `json:"status,omitempty"` // VCSStatus（插件返回的超集原样透传）

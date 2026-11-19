@@ -60,6 +60,8 @@ for dir in "${DIRS[@]}"; do
   cmd="$(ls -d "$dir"/cmd/*/ | head -1)"
   for p in $PLATS; do
     os="${p%/*}"; arch="${p#*/}"
+    # 插件声明了 os 且不含这个系统：不出这个平台的包
+    python3 -c "import json,sys;m=json.load(open(sys.argv[1]));o=m.get('os') or [];sys.exit(0 if not o or sys.argv[2] in o else 1)" "$dir/plugin.json" "$os" || continue
     stage="$(mktemp -d)"
     cp "$dir/plugin.json" "$stage/"
     for sub in icons l10n resources web editor keymaps themes; do [ -d "$dir/$sub" ] && cp -R "$dir/$sub" "$stage/"; done

@@ -40,6 +40,17 @@ type Project struct {
 	LaunchAlias map[string]string `json:"launchAlias,omitempty"`
 	// DetectVersion 是识别模块时所用规则的版本；内核的规则升级后，旧版本识别的工程会在后台自动重新识别
 	DetectVersion int `json:"detectVersion,omitempty"`
+	// LastRun 是最近一次结束的运行（卡片「未运行 · 上次运行 3 小时前」用），内核重启后也还在
+	LastRun *LastRun `json:"lastRun,omitempty"`
+}
+
+// LastRun 是工程最近一次结束的运行。
+type LastRun struct {
+	ConfigID string    `json:"configId"`
+	Name     string    `json:"name"`
+	EndedAt  time.Time `json:"endedAt"`
+	ExitCode int       `json:"exitCode,omitempty"`
+	Failed   bool      `json:"failed,omitempty"` // 异常退出或启动失败（用户停止不算）
 }
 
 type ProjectSettings struct {
@@ -154,6 +165,7 @@ type ProjectSummary struct {
 	MissingToolchains []string          `json:"missingToolchains,omitempty"` // 如 ["jdk 17"]
 	Dependencies      string            `json:"dependencies,omitempty"`      // ok | missing | outdated | unknown（各模块中最差的）
 	Busy              string            `json:"busy,omitempty"`              // 正在进行的任务标题（导入、同步、安装…）
+	LastRun           *LastRun          `json:"lastRun,omitempty"`           // 最近一次结束的运行
 }
 
 // FacetBadge 是卡片上的技术徽标（已本地化）。

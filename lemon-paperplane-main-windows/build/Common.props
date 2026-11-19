@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 三个工程共用的编译设置：.NET Framework 4.8、最新 C#、可空引用、AnyCPU（x64 与 ARM64 都原生运行）。 -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Deterministic>true</Deterministic>
+    <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <WarningLevel>4</WarningLevel>
+    <!-- CS1591 文档注释；CS8618 未初始化的不可空字段（模型类由 JSON 填充） -->
+    <NoWarn>$(NoWarn);CS1591;CS8618</NoWarn>
+    <DebugType>portable</DebugType>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>obj\$(Configuration)\</IntermediateOutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <VendorDir>$(MSBuildThisFileDirectory)..\Vendor\</VendorDir>
+    <SharedDir>$(MSBuildThisFileDirectory)..\..\shared\</SharedDir>
+  </PropertyGroup>
+  <!-- 机器上没装 4.8 目标包时，用 build.ps1 下载的参考程序集（NuGet: Microsoft.NETFramework.ReferenceAssemblies.net48） -->
+  <PropertyGroup Condition=" '$(PaperplaneRefAssemblies)' != '' ">
+    <TargetFrameworkRootPath>$([MSBuild]::EnsureTrailingSlash('$(PaperplaneRefAssemblies)'))</TargetFrameworkRootPath>
+  </PropertyGroup>
+  <!-- 版本：package.ps1 传 /p:PaperplaneVersion=1.2.3；程序集版本只能是数字，从中取 x.y.z -->
+  <PropertyGroup>
+    <PaperplaneVersion Condition=" '$(PaperplaneVersion)' == '' ">0.1.0</PaperplaneVersion>
+    <PaperplaneNumericVersion>$([System.Text.RegularExpressions.Regex]::Match('$(PaperplaneVersion)', '^\d+(\.\d+){0,2}').Value).0</PaperplaneNumericVersion>
+  </PropertyGroup>
+  <Target Name="PaperplaneVersionInfo" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <PaperplaneAssemblyAttribute Include="System.Reflection.AssemblyVersionAttribute"><_Parameter1>$(PaperplaneNumericVersion)</_Parameter1></PaperplaneAssemblyAttribute>
+      <PaperplaneAssemblyAttribute Include="System.Reflection.AssemblyFileVersionAttribute"><_Parameter1>$(PaperplaneNumericVersion)</_Parameter1></PaperplaneAssemblyAttribute>
+      <PaperplaneAssemblyAttribute Include="System.Reflection.AssemblyInformationalVersionAttribute"><_Parameter1>$(PaperplaneVersion)</_Parameter1></PaperplaneAssemblyAttribute>
+      <PaperplaneAssemblyAttribute Include="System.Reflection.AssemblyProductAttribute"><_Parameter1>Lemon Paperplane</_Parameter1></PaperplaneAssemblyAttribute>
+      <PaperplaneAssemblyAttribute Include="System.Reflection.AssemblyTitleAttribute"><_Parameter1>Lemon Paperplane</_Parameter1></PaperplaneAssemblyAttribute>
+      <PaperplaneAssemblyAttribute Include="System.Reflection.AssemblyCompanyAttribute"><_Parameter1>LemonIT</_Parameter1></PaperplaneAssemblyAttribute>
+      <PaperplaneAssemblyAttribute Include="System.Reflection.AssemblyCopyrightAttribute"><_Parameter1>Copyright (c) 2026 LemonITCN</_Parameter1></PaperplaneAssemblyAttribute>
+    </ItemGroup>
+    <WriteCodeFragment AssemblyAttributes="@(PaperplaneAssemblyAttribute)" Language="C#" OutputFile="$(IntermediateOutputPath)VersionInfo.g.cs" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)VersionInfo.g.cs" />
+    </ItemGroup>
+  </Target>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <Optimize>true</Optimize>
+    <DefineConstants>TRACE</DefineConstants>
+  </PropertyGroup>
+</Project>

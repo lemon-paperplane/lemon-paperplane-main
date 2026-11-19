@@ -82,7 +82,7 @@ func (r *Registry) registerAll() {
 				"claudeDesktop": map[string]any{"mcpServers": map[string]any{"paperplane": map[string]any{"command": exe, "args": []string{"mcp"}}}},
 			}, nil
 		})
-	def(r, "cli.install", "Install CLI", "Link the paperplane command into a directory on PATH (default ~/.local/bin, or /usr/local/bin when writable).", "i",
+	def(r, "cli.install", "Install CLI", "Link the paperplane command into a directory on PATH (default ~/.local/bin, or /usr/local/bin when writable). On Windows: add the installation folder to the user PATH.", "i",
 		func(ctx context.Context, in *struct {
 			Dir string `json:"dir"`
 		}) (any, error) {
@@ -919,6 +919,9 @@ func readLogs(e *engine.Engine, id string, tail int, since int64, grep, stream s
 func installCLI(exe, dir string) (any, error) {
 	if exe == "" {
 		return nil, engine.Errf("err.noExecutable")
+	}
+	if runtime.GOOS == "windows" && dir == "" {
+		return installCLIWindows(exe)
 	}
 	home, _ := os.UserHomeDir()
 	name := "paperplane"

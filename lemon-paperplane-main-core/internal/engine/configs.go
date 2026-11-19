@@ -227,7 +227,7 @@ func (e *Engine) SetDefaultConfig(projectID, configID string) error {
 
 // SetProjectToolchain 设置/清除工程级工具链覆盖并重新选择；需要时自动下载。
 func (e *Engine) SetProjectToolchain(ctx context.Context, projectID, kind string, ov *model.ToolchainOverride) (*model.Project, error) {
-	p, err := e.Store.UpdateProject(projectID, func(p *model.Project) error {
+	p, _, err := e.reselectProject(ctx, projectID, func(p *model.Project) {
 		if p.Settings.Toolchains == nil {
 			p.Settings.Toolchains = map[string]model.ToolchainOverride{}
 		}
@@ -236,10 +236,6 @@ func (e *Engine) SetProjectToolchain(ctx context.Context, projectID, kind string
 		} else {
 			p.Settings.Toolchains[kind] = *ov
 		}
-		for _, m := range p.Modules {
-			e.selectToolchains(ctx, p, m)
-		}
-		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -440,16 +436,7 @@ func (e *Engine) OpenProject(projectID, moduleID, with string) error {
 			cmd = exec.Command("open", dir)
 		}
 	case "windows":
-		switch with {
-		case "terminal":
-			cmd = exec.Command("cmd", "/c", "start", "wt", "-d", dir)
-		case "vscode":
-			cmd = exec.Command("cmd", "/c", "code", dir)
-		case "idea":
-			cmd = exec.Command("cmd", "/c", "idea64", dir)
-		default:
-			cmd = exec.Command("explorer", dir)
-		}
+		cmd = openWithWindows(e.Store.Settings().Terminal, with, dir)
 	default:
 		switch with {
 		case "vscode":

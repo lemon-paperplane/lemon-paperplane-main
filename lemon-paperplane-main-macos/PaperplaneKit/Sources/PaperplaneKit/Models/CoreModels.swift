@@ -175,6 +175,8 @@ public struct ProjectSummary: Codable, Hashable, Identifiable {
     @DefArray public var missingToolchains: [String]
     public var dependencies: String?
     public var busy: String?
+    /// 最近一次结束的运行（卡片「未运行 · 上次运行 3 小时前」）
+    public var lastRun: LastRun?
 
     public init(id: String, name: String, path: String, workspaceId: String, status: String = "idle") {
         self.id = id; self.name = name; self.path = path; self.workspaceId = workspaceId; self.status = status
@@ -182,6 +184,16 @@ public struct ProjectSummary: Codable, Hashable, Identifiable {
 
     /// 是否有运行中（含启动中、准备中、停止中）的运行
     public var hasActiveRun: Bool { runs.contains { RunState.isActive($0.state) } }
+}
+
+/// 工程最近一次结束的运行（内核随工程保存，内核重启后也还在）。
+public struct LastRun: Codable, Hashable {
+    @DefString public var configId: String
+    @DefString public var name: String
+    public var endedAt: Date?
+    @DefInt public var exitCode: Int
+    /// 异常退出或启动失败（用户停止不算）
+    @DefBool public var failed: Bool
 }
 
 public struct FacetBadge: Codable, Hashable, Identifiable {

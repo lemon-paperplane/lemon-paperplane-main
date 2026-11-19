@@ -267,7 +267,7 @@ func (w *LineWriter) Flush() {
 }
 
 func (w *LineWriter) emit(line []byte) {
-	s := strings.TrimRight(string(line), "\r")
+	s := strings.TrimRight(decodeLine(line), "\r")
 	if i := strings.LastIndex(s, "\r"); i >= 0 {
 		s = s[i+1:]
 	}

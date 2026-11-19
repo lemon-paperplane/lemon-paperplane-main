@@ -1,0 +1,288 @@
+<!--
+  只给必须用模板的控件自绘外观（TextBox、PasswordBox、ScrollViewer/ScrollBar、ToolTip、系统自带的文本框右键菜单）。
+  运行时由 Templates.cs 用 XamlReader 读取（不走 XAML 编译），合并进 Application.Resources。
+  颜色一律 DynamicResource（键名同 design-tokens.json），字体用 font.ui / font.mono（代码里放进资源）。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- 不要系统的虚线焦点框：组件自己画 2px focusRing -->
+  <Style x:Key="{x:Static SystemParameters.FocusVisualStyleKey}">
+    <Setter Property="Control.Template">
+      <Setter.Value>
+        <ControlTemplate />
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 文本框：只留文字与光标，外框由 PPTextField / PPTextArea 的 InputChrome 画 -->
+  <Style TargetType="{x:Type TextBox}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource textPrimary}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource textPrimary}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource accent}" />
+    <Setter Property="SelectionOpacity" Value="0.35" />
+    <Setter Property="FontFamily" Value="{DynamicResource font.ui}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="KeyboardNavigation.TabNavigation" Value="None" />
+    <Setter Property="AllowDrop" Value="True" />
+    <Setter Property="ScrollViewer.PanningMode" Value="VerticalFirst" />
+    <Setter Property="Stylus.IsFlicksEnabled" Value="False" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type TextBox}">
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+            <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Hidden" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="{x:Type PasswordBox}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource textPrimary}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource textPrimary}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource accent}" />
+    <Setter Property="SelectionOpacity" Value="0.35" />
+    <Setter Property="FontFamily" Value="{DynamicResource font.ui}" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="KeyboardNavigation.TabNavigation" Value="None" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type PasswordBox}">
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+            <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Hidden" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 滚动条：叠在内容上的细条（Windows 11 风格），空闲 4px，鼠标移上去 8px；颜色 scrollbar -->
+  <Style x:Key="pp.scrollPage" TargetType="{x:Type RepeatButton}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type RepeatButton}">
+          <Border Background="Transparent" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style x:Key="pp.scrollThumb" TargetType="{x:Type Thumb}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="IsTabStop" Value="False" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type Thumb}">
+          <Border Background="{DynamicResource scrollbar}" CornerRadius="4" SnapsToDevicePixels="True" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <ControlTemplate x:Key="pp.vScrollBar" TargetType="{x:Type ScrollBar}">
+    <Grid Background="Transparent" SnapsToDevicePixels="True">
+      <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
+        <Track.DecreaseRepeatButton>
+          <RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource pp.scrollPage}" />
+        </Track.DecreaseRepeatButton>
+        <Track.IncreaseRepeatButton>
+          <RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource pp.scrollPage}" />
+        </Track.IncreaseRepeatButton>
+        <Track.Thumb>
+          <Thumb x:Name="thumb" Style="{StaticResource pp.scrollThumb}" Width="4" HorizontalAlignment="Right" Margin="0,2,2,2" />
+        </Track.Thumb>
+      </Track>
+    </Grid>
+    <ControlTemplate.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter TargetName="thumb" Property="Width" Value="8" />
+      </Trigger>
+      <Trigger SourceName="thumb" Property="IsDragging" Value="True">
+        <Setter TargetName="thumb" Property="Width" Value="8" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <ControlTemplate x:Key="pp.hScrollBar" TargetType="{x:Type ScrollBar}">
+    <Grid Background="Transparent" SnapsToDevicePixels="True">
+      <Track x:Name="PART_Track" IsDirectionReversed="False" Focusable="False">
+        <Track.DecreaseRepeatButton>
+          <RepeatButton Command="ScrollBar.PageLeftCommand" Style="{StaticResource pp.scrollPage}" />
+        </Track.DecreaseRepeatButton>
+        <Track.IncreaseRepeatButton>
+          <RepeatButton Command="ScrollBar.PageRightCommand" Style="{StaticResource pp.scrollPage}" />
+        </Track.IncreaseRepeatButton>
+        <Track.Thumb>
+          <Thumb x:Name="thumb" Style="{StaticResource pp.scrollThumb}" Height="4" VerticalAlignment="Bottom" Margin="2,0,2,2" />
+        </Track.Thumb>
+      </Track>
+    </Grid>
+    <ControlTemplate.Triggers>
+      <Trigger Property="IsMouseOver" Value="True">
+        <Setter TargetName="thumb" Property="Height" Value="8" />
+      </Trigger>
+      <Trigger SourceName="thumb" Property="IsDragging" Value="True">
+        <Setter TargetName="thumb" Property="Height" Value="8" />
+      </Trigger>
+    </ControlTemplate.Triggers>
+  </ControlTemplate>
+
+  <Style TargetType="{x:Type ScrollBar}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Stylus.IsPressAndHoldEnabled" Value="False" />
+    <Setter Property="Stylus.IsFlicksEnabled" Value="False" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Width" Value="12" />
+    <Setter Property="Height" Value="Auto" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Template" Value="{StaticResource pp.vScrollBar}" />
+    <Style.Triggers>
+      <Trigger Property="Orientation" Value="Horizontal">
+        <Setter Property="Width" Value="Auto" />
+        <Setter Property="Height" Value="12" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Template" Value="{StaticResource pp.hScrollBar}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- 滚动区域：滚动条叠在内容上，不占宽度（和 Mac 的悬浮滚动条一样，布局宽度不受影响） -->
+  <Style TargetType="{x:Type ScrollViewer}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type ScrollViewer}">
+          <Grid Background="{TemplateBinding Background}">
+            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Margin="{TemplateBinding Padding}"
+                                    CanContentScroll="{TemplateBinding CanContentScroll}"
+                                    Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+            <ScrollBar x:Name="PART_VerticalScrollBar" HorizontalAlignment="Right" Orientation="Vertical" Cursor="Arrow"
+                       Maximum="{TemplateBinding ScrollableHeight}" ViewportSize="{TemplateBinding ViewportHeight}"
+                       Value="{Binding VerticalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+            <ScrollBar x:Name="PART_HorizontalScrollBar" VerticalAlignment="Bottom" Orientation="Horizontal" Cursor="Arrow"
+                       Maximum="{TemplateBinding ScrollableWidth}" ViewportSize="{TemplateBinding ViewportWidth}"
+                       Value="{Binding HorizontalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                       Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}" />
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 悬停提示：bgElevated、1px border、圆角 6、small 字号 -->
+  <Style TargetType="{x:Type ToolTip}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="HasDropShadow" Value="True" />
+    <Setter Property="Placement" Value="Bottom" />
+    <Setter Property="VerticalOffset" Value="2" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type ToolTip}">
+          <Grid Margin="6,2,6,8">
+            <Border Background="{DynamicResource bgElevated}" CornerRadius="6" Effect="{DynamicResource shadow.popup}" />
+            <Border BorderBrush="{DynamicResource border}" BorderThickness="1" CornerRadius="6" Padding="8,4" SnapsToDevicePixels="True">
+              <ContentPresenter TextElement.Foreground="{DynamicResource textPrimary}" TextElement.FontFamily="{DynamicResource font.ui}"
+                                TextElement.FontSize="12" TextOptions.TextFormattingMode="Display">
+                <ContentPresenter.Resources>
+                  <Style TargetType="{x:Type TextBlock}">
+                    <Setter Property="TextWrapping" Value="Wrap" />
+                    <Setter Property="MaxWidth" Value="320" />
+                    <Setter Property="LineHeight" Value="16" />
+                    <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+                  </Style>
+                </ContentPresenter.Resources>
+              </ContentPresenter>
+            </Border>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <!-- 文本框自带的右键菜单（剪切 / 复制 / 粘贴…）：外观同自绘菜单 -->
+  <Style TargetType="{x:Type ContextMenu}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="HasDropShadow" Value="True" />
+    <Setter Property="Grid.IsSharedSizeScope" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type ContextMenu}">
+          <Grid Margin="8,4,8,12">
+            <Border Background="{DynamicResource bgElevated}" CornerRadius="8" Effect="{DynamicResource shadow.popup}" />
+            <Border BorderBrush="{DynamicResource border}" BorderThickness="1" CornerRadius="8" Padding="4" MinWidth="180" SnapsToDevicePixels="True"
+                    TextElement.FontFamily="{DynamicResource font.ui}" TextElement.FontSize="13" TextOptions.TextFormattingMode="Display">
+              <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+            </Border>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="{x:Type MenuItem}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Foreground" Value="{DynamicResource textPrimary}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type MenuItem}">
+          <Border x:Name="bg" Height="28" CornerRadius="4" Padding="8,0" Background="Transparent" SnapsToDevicePixels="True">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="24" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" SharedSizeGroup="gesture" />
+              </Grid.ColumnDefinitions>
+              <ContentPresenter x:Name="header" Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" />
+              <TextBlock x:Name="gesture" Grid.Column="2" Text="{TemplateBinding InputGestureText}" Margin="16,0,0,0" FontSize="12"
+                         Foreground="{DynamicResource textTertiary}" VerticalAlignment="Center" />
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+              <Setter TargetName="bg" Property="Background" Value="{DynamicResource accent}" />
+              <Setter Property="Foreground" Value="{DynamicResource textOnAccent}" />
+              <Setter TargetName="gesture" Property="Foreground" Value="{DynamicResource textOnAccent}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Foreground" Value="{DynamicResource textDisabled}" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="{x:Type Separator}">
+    <Setter Property="OverridesDefaultStyle" Value="True" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="{x:Type Separator}">
+          <Border Height="1" Margin="4" Background="{DynamicResource borderSubtle}" SnapsToDevicePixels="True" />
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+</ResourceDictionary>

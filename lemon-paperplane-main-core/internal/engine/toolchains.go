@@ -205,6 +205,12 @@ func (e *Engine) InstallToolchain(kind, version string) (model.Task, error) {
 
 // installToolchain 同步执行安装，返回安装好的工具链。
 func (e *Engine) installToolchain(ctx context.Context, p *plugins.Plugin, kind, version, taskID string) (*sdk.Toolchain, error) {
+	// 工程没写版本时是 "latest"：按插件给的可下载列表取推荐版本（没有推荐就取最新），不让每个插件各自认 latest
+	if version == "" || version == "latest" {
+		if vs, err := e.AvailableToolchains(ctx, kind); err == nil && len(vs) > 0 {
+			version = pickInstallVersion(vs)
+		}
+	}
 	dest := filepath.Join(e.Layout.Toolchains, kind, unsafeChars.ReplaceAllString(version, "_")+"-"+time.Now().Format("150405"))
 	var r sdk.InstallToolchainResult
 	if err := e.Plugins.Call(ctx, p, sdk.MethodInstallToolchain, &sdk.InstallToolchainParams{Kind: kind, Version: version, Dest: dest, TaskID: taskID}, &r); err != nil {
@@ -434,6 +440,21 @@ func pickToolchain(tcs []sdk.Toolchain, cons []string, preferred string) *sdk.To
 	return best
 }
 
+// pickInstallVersion：推荐版本 → 最新的长期支持版 → 列表第一个（插件按新到旧给出）。
+func pickInstallVersion(vs []sdk.AvailableVersion) string {
+	for _, v := range vs {
+		if v.Recommended {
+			return v.Version
+		}
+	}
+	for _, v := range vs {
+		if v.LTS {
+			return v.Version
+		}
+	}
+	return vs[0].Version
+}
+
 // constraintForInstall 从选择推导一个可安装的版本：优先 preferred，其次约束本身。
 func constraintForInstall(sel model.ToolchainSelection) string {
 	if sel.Preferred != "" {
@@ -491,22 +512,49 @@ func (e *Engine) ensureToolchains(ctx context.Context, p *model.Project, m *mode
 func (e *Engine) reselectAll() {
 	ctx := context.Background()
 	for _, p := range e.Store.Projects("") {
-		changed := false
-		updated, err := e.Store.UpdateProject(p.ID, func(pp *model.Project) error {
-			for _, m := range pp.Modules {
-				before, _ := json.Marshal(m.Toolchains)
-				e.selectToolchains(ctx, pp, m)
-				after, _ := json.Marshal(m.Toolchains)
-				if string(before) != string(after) {
-					changed = true
-				}
-			}
-			return nil
-		})
+		updated, changed, err := e.reselectProject(ctx, p.ID, nil)
 		if err == nil && changed {
 			e.publishProject(updated.ID)
 		}
 	}
+}
+
+// reselectProject 重新选工具链并写回工程（mutate 先改工程设置，可为 nil）。
+// 选工具链要调插件，插件进程启动时会读设置；放在 Store.UpdateProject 的回调里（持有写锁）会自己等自己，
+// 所以在锁外算好、锁内只写结果。
+func (e *Engine) reselectProject(ctx context.Context, projectID string, mutate func(p *model.Project)) (*model.Project, bool, error) {
+	cur, ok := e.Store.Project(projectID)
+	if !ok {
+		return nil, false, ErrNotFound
+	}
+	if mutate != nil {
+		mutate(cur)
+	}
+	sel := map[string]map[string]model.ToolchainSelection{}
+	for _, m := range cur.Modules {
+		e.selectToolchains(ctx, cur, m)
+		sel[m.ID] = m.Toolchains
+	}
+	changed := false
+	updated, err := e.Store.UpdateProject(projectID, func(p *model.Project) error {
+		if mutate != nil {
+			mutate(p)
+		}
+		for _, m := range p.Modules {
+			t, ok := sel[m.ID]
+			if !ok {
+				continue
+			}
+			before, _ := json.Marshal(m.Toolchains)
+			after, _ := json.Marshal(t)
+			if string(before) != string(after) {
+				m.Toolchains = t
+				changed = true
+			}
+		}
+		return nil
+	})
+	return updated, changed, err
 }
 
 func dedupe(xs []string) []string {

@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -35,6 +36,25 @@ func TestRunnableKind(t *testing.T) {
 		{"vite.config.ts", []byte("export default {}"), 0o644, RunnableSource},
 		{"env.d.ts", []byte("declare"), 0o644, ""},
 		{"app.jar", []byte("PK"), 0o644, RunnableSource},
+	}
+	if runtime.GOOS == "windows" {
+		// Windows 没有执行权限位：程序看扩展名
+		for i := range cases {
+			if cases[i].name == "tool" {
+				cases[i].want = ""
+			}
+		}
+		cases = append(cases, struct {
+			name string
+			body []byte
+			mode os.FileMode
+			want string
+		}{"tool.exe", []byte("MZ"), 0o644, RunnableBinary}, struct {
+			name string
+			body []byte
+			mode os.FileMode
+			want string
+		}{"build.bat", []byte("@echo off"), 0o644, RunnableScript})
 	}
 	for _, c := range cases {
 		p := mk(c.name, c.body, c.mode)

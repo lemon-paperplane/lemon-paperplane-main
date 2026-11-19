@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -86,6 +87,13 @@ func (s *Server) Serve() error {
 	mux.HandleFunc("/mcp", s.handleMCP)
 	mux.HandleFunc("/editor/", s.handleEditor)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") })
+	// 排查卡死：全部协程的调用栈（Windows 没有 SIGQUIT）。同样要令牌；只在设了 PAPERPLANE_DEBUG 时开放
+	if os.Getenv("PAPERPLANE_DEBUG") != "" {
+		mux.HandleFunc("/debug/goroutines", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_ = pprof.Lookup("goroutine").WriteTo(w, 2)
+		})
+	}
 	s.srv = &http.Server{Handler: s.guard(mux), ReadHeaderTimeout: 10 * time.Second}
 	err := s.srv.Serve(s.ln)
 	if errors.Is(err, http.ErrServerClosed) {

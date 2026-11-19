@@ -103,28 +103,63 @@ func (e *Engine) buildEnv(overlay map[string]string, pathPrepend []string) []str
 	if e.cfg.EnvReady != nil {
 		<-e.cfg.EnvReady // 登录 shell 的环境变量还在后台读取
 	}
-	env := map[string]string{}
+	env := newEnvMap()
 	for _, kv := range os.Environ() {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			env[k] = v
+		if k, v, ok := strings.Cut(kv, "="); ok && k != "" {
+			env.set(k, v)
 		}
 	}
 	// 从图形界面启动的 daemon 拿不到用户 shell 的 PATH，补齐常见目录
-	env["PATH"] = augmentPath(env["PATH"])
+	env.set("PATH", augmentPath(env.get("PATH")))
 	for k, v := range mirrors.Env(e.Mirrors()) {
-		if _, user := env[k]; !user {
-			env[k] = v
+		if !env.has(k) {
+			env.set(k, v)
 		}
 	}
 	for k, v := range overlay {
-		env[k] = v
+		env.set(k, v)
 	}
 	if len(pathPrepend) > 0 {
-		env["PATH"] = strings.Join(pathPrepend, string(os.PathListSeparator)) + string(os.PathListSeparator) + env["PATH"]
+		env.set("PATH", strings.Join(pathPrepend, string(os.PathListSeparator))+string(os.PathListSeparator)+env.get("PATH"))
 	}
-	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, k+"="+v)
+	return env.list()
+}
+
+// envMap 按平台规则合并环境变量：Windows 上变量名不分大小写（系统里是 Path，插件和代码里写 PATH），
+// 按大写合并、保留第一次出现的写法；否则子进程会同时拿到 Path 和 PATH，随机用到其中一个。
+type envMap struct {
+	vals  map[string]string
+	names map[string]string
+}
+
+func newEnvMap() *envMap { return &envMap{vals: map[string]string{}, names: map[string]string{}} }
+
+func envCanon(k string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(k)
+	}
+	return k
+}
+
+func (m *envMap) set(k, v string) {
+	c := envCanon(k)
+	if _, ok := m.names[c]; !ok {
+		m.names[c] = k
+	}
+	m.vals[c] = v
+}
+
+func (m *envMap) get(k string) string { return m.vals[envCanon(k)] }
+
+func (m *envMap) has(k string) bool {
+	_, ok := m.vals[envCanon(k)]
+	return ok
+}
+
+func (m *envMap) list() []string {
+	out := make([]string, 0, len(m.vals))
+	for c, v := range m.vals {
+		out = append(out, m.names[c]+"="+v)
 	}
 	return out
 }
@@ -245,6 +280,7 @@ func (e *Engine) exec(ctx context.Context, p *sdk.ExecParams) *sdk.ExecResult {
 		}
 		return res
 	}
+	proc.Started(cmd)
 	h := &execHandle{cmd: cmd}
 	if p.Console != "" {
 		e.mu.Lock()

@@ -216,8 +216,26 @@ func (e *Engine) failRun(rs *runState, err error) {
 		}
 		r.EndedAt = &now
 	})
+	e.recordLastRun(rs.snapshot())
 	rs.console.Close()
 	close(rs.exited)
+}
+
+// recordLastRun 把结束的运行记到工程上（随工程保存，卡片上显示「上次运行」）。
+func (e *Engine) recordLastRun(r model.Run) {
+	if r.EndedAt == nil || r.ProjectID == "" {
+		return
+	}
+	lr := &model.LastRun{ConfigID: r.ConfigID, Name: r.Name, EndedAt: *r.EndedAt, Failed: r.State == model.RunFailed}
+	if r.ExitCode != nil {
+		lr.ExitCode = *r.ExitCode
+	}
+	if _, err := e.Store.UpdateProject(r.ProjectID, func(p *model.Project) error {
+		p.LastRun = lr
+		return nil
+	}); err == nil {
+		e.publishProject(r.ProjectID)
+	}
 }
 
 func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.Plugin) {
@@ -333,6 +351,7 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 		e.diagnoseRunFailure(rs, p, m, cfg)
 		return
 	}
+	proc.Started(cmd)
 	stopSig := spec.StopSignal
 	if stopSig == "" {
 		stopSig = "SIGTERM"
@@ -387,6 +406,7 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 		}
 		final = *r
 	})
+	e.recordLastRun(final)
 	if final.StoppedByUser {
 		rs.console.System(i18n.T("run.stopped"))
 	} else {

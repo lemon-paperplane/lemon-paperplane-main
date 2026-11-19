@@ -1,0 +1,15 @@
+{
+  "editor.action.revealMac": "在资源管理器中显示",
+  "editor.tree.deleteMessage": "把 {0} 移到回收站？",
+  "editor.tree.moveToTrash": "移到回收站",
+  "files.delete.message": "将移到回收站，需要时可以从回收站恢复。",
+  "files.deleted": "已移到回收站",
+  "open.finder": "在资源管理器中显示",
+  "vcs.revealInFinder": "在资源管理器中显示",
+  "vcs.revealRepo": "在资源管理器中显示仓库",
+  "terminal.reveal": "在资源管理器中显示目录",
+  "launch.addCommand.commandInfo": "可以写多行，按顺序执行，和在终端里逐行输入一样。装了 PowerShell 7 时用它执行，否则用命令提示符。按 Ctrl+Enter 直接添加。",
+  "terminal.info": "终端是在工程目录里打开的 PowerShell（装了 PowerShell 7 时用它），带上工程设置的环境变量。终端由后台服务保持：切到别的页面或关掉窗口都不会中断，回来时输出会补齐。输入 exit 正常退出时终端自动关闭。Ctrl+Shift+K 清屏；有选中文字时 Ctrl+C 复制，没有时中断正在运行的命令；Ctrl 点击链接在浏览器中打开。",
+  "settings.cli.info": "把安装目录加到用户 PATH，在终端里使用 paperplane run、logs 等命令（新打开的终端生效）。",
+  "menubar.openWindow": "打开主窗口"
+}

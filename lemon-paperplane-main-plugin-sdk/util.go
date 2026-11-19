@@ -137,10 +137,21 @@ func FileExists(path string) bool {
 	return err == nil && !st.IsDir()
 }
 
-// DirExists 判断是目录。
+// DirExists 判断是目录。Windows 上进程带「重定向保护」时（例如从服务派生的进程）打不开普通用户建的目录联接
+// （uv 的 cpython-3.12-… 就是联接），这时读出联接目标再判断。
 func DirExists(path string) bool {
 	st, err := os.Stat(path)
-	return err == nil && st.IsDir()
+	if err == nil {
+		return st.IsDir()
+	}
+	if runtime.GOOS == "windows" {
+		if t, err2 := os.Readlink(path); err2 == nil && t != "" {
+			if st, err := os.Stat(t); err == nil {
+				return st.IsDir()
+			}
+		}
+	}
+	return false
 }
 
 // ReadText 读取文本文件，超过 max 字节截断（max<=0 表示 4 MB）。

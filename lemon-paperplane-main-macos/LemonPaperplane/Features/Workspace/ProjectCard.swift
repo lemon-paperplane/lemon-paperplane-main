@@ -53,7 +53,8 @@ struct ProjectCard: View {
             }
         }
         .padding(M.lg)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        // 撑满网格单元：同一排的卡片一样高（每排按最高的那张），内容靠上
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: M.radiusLG, style: .continuous).fill(theme.bgSurface)
             .shadow(color: .black.opacity(hover ? (theme.isDark ? 0.3 : 0.07) : 0), radius: 6, y: 2))
         .overlay(RoundedRectangle(cornerRadius: M.radiusLG, style: .continuous)
@@ -111,6 +112,7 @@ struct ProjectCard: View {
                         }
                     }
                 }
+                // 运行中：地址 + 资源；没在运行：「未运行 · 上次运行 …」占住同一行，卡片高度不随启停跳动
                 if let r = currentRun, RunState.isActive(r.state) {
                     HStack(spacing: M.md) {
                         if let url = r.urls.first {
@@ -122,10 +124,17 @@ struct ProjectCard: View {
                         // 只有这一小块随 stats 重绘（每个运行一个可观察对象），卡片本身不动
                         RunResourceInline(runId: r.id, startedAt: AppModel.shared.runs.runs[r.id]?.startedAt)
                     }
+                    .frame(height: ProjectCard.statusLineHeight)
+                } else {
+                    IdleRunLine(lastRun: p.lastRun)
+                        .frame(height: ProjectCard.statusLineHeight)
                 }
             }
         }
     }
+
+    /// 运行状态行（地址 + 资源 / 未运行）的固定高度
+    static let statusLineHeight: CGFloat = 18
 
     private func gitLine(_ v: VCSBrief) -> some View {
         HStack(spacing: M.sm) {
@@ -143,6 +152,34 @@ struct ProjectCard: View {
         }
         .font(.pp(.small))
         .foregroundColor(theme.textSecondary)
+    }
+}
+
+/// 没在运行时的状态行：未运行 · 上次运行 3 小时前；上次异常退出用红色写退出码。每分钟刷新相对时间。
+private struct IdleRunLine: View {
+    let lastRun: LastRun?
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { _ in
+            HStack(spacing: M.xs) {
+                PPIcon("power", size: 12, color: theme.iconSecondary)
+                Text(tr("card.idle")).foregroundColor(theme.textTertiary)
+                if let lr = lastRun, let at = lr.endedAt {
+                    Text("·").foregroundColor(theme.textTertiary)
+                    if lr.failed {
+                        Text(lr.exitCode != 0 ? tr("card.lastFailed", VCSDate.short(at), lr.exitCode) : tr("card.lastStartFailed", VCSDate.short(at)))
+                            .foregroundColor(theme.danger)
+                    } else {
+                        Text(tr("card.lastRun", VCSDate.short(at))).foregroundColor(theme.textTertiary)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.pp(.small))
+            .lineLimit(1)
+            .help(lastRun?.name ?? "")
+        }
     }
 }
 

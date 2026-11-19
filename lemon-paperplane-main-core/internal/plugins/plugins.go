@@ -124,7 +124,7 @@ func (m *Manager) Reload(locale string) {
 	found := map[string]*Plugin{}
 	consider := func(dir, source string) {
 		man, err := sdk.LoadManifest(dir)
-		if err != nil {
+		if err != nil || !man.SupportsOS(runtime.GOOS) {
 			return
 		}
 		p := &Plugin{Manifest: man, Dir: dir, Source: source}
@@ -176,7 +176,7 @@ func (m *Manager) Reload(locale string) {
 			p.Error = fmt.Sprintf("requires paperplane %s", c)
 		} else if p.Manifest.Declarative() {
 			// 纯声明插件没有进程
-		} else if _, err := os.Stat(p.executable()); err != nil {
+		} else if exe, _ := p.command(); !fileExists(exe) {
 			p.Error = "executable not found: " + p.Manifest.Executable
 		}
 	}
@@ -319,6 +319,24 @@ func (p *Plugin) executable() string {
 	return exe
 }
 
+// command 返回插件进程的可执行文件与参数。Windows 没有符号链接：内置插件的 bin 下放
+// <名字>.bundled，内容是多入口程序 paperplane-plugins.exe 的相对路径，启动时把插件 id 作为参数传给它。
+func (p *Plugin) command() (string, []string) {
+	exe := p.executable()
+	if runtime.GOOS == "windows" && !fileExists(exe) {
+		base := strings.TrimSuffix(filepath.Join(p.Dir, filepath.FromSlash(p.Manifest.Executable)), ".exe")
+		if b, err := os.ReadFile(base + ".bundled"); err == nil {
+			return filepath.Clean(filepath.Join(filepath.Dir(base), strings.TrimSpace(string(b)))), []string{p.ID()}
+		}
+	}
+	return exe, nil
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
+}
+
 // Call 调用插件方法（必要时拉起进程）。
 func (m *Manager) Call(ctx context.Context, p *Plugin, method string, params, result any) error {
 	if p == nil {
@@ -387,8 +405,8 @@ func (m *Manager) ensure(p *Plugin) (*sdk.Conn, error) {
 }
 
 func (m *Manager) start(p *Plugin) (*sdk.Conn, *exec.Cmd, chan struct{}, error) {
-	exe := p.executable()
-	cmd := exec.Command(exe)
+	exe, args := p.command()
+	cmd := exec.Command(exe, args...)
 	cmd.Dir = p.Dir
 	cmd.Env = os.Environ()
 	stdin, err := cmd.StdinPipe()

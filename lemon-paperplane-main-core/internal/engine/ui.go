@@ -33,7 +33,7 @@ var categoryRank = map[string]int{"framework": 0, "language": 1, "runtime": 2, "
 // Summary 生成工程卡片摘要。
 func (e *Engine) Summary(p *model.Project) model.ProjectSummary {
 	s := model.ProjectSummary{ID: p.ID, Name: p.Name, Path: p.Path, WorkspaceID: p.WorkspaceID, DefaultConfigID: p.DefaultConfigID, Configs: []model.ConfigBrief{}, Facets: []model.FacetBadge{},
-		Launch: launchIDs(p), LaunchAlias: launchAliases(p)}
+		Launch: launchIDs(p), LaunchAlias: launchAliases(p), LastRun: p.LastRun}
 	seen := map[string]bool{}
 	prio := map[string]int{}
 	for _, m := range p.Modules {

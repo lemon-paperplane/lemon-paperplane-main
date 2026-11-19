@@ -1,11 +1,9 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -33,7 +31,14 @@ const (
 type ptyHandle interface {
 	io.ReadWriteCloser
 	Resize(cols, rows int) error
-	Foreground() int // 前台进程组，0 表示取不到
+	Foreground() int // 前台进程组（Windows：shell 的子进程），0 表示取不到
+	Hangup()         // 和关掉终端窗口一样通知 shell 退出（Unix 发 SIGHUP，Windows 关闭伪控制台）
+}
+
+// termProc 是伪终端里运行的 shell 进程。
+type termProc interface {
+	Pid() int
+	Wait() (code int, err error) // err 只表示等待本身失败；被信号结束时 code 为 129
 }
 
 // TermChunk 是推给订阅者的一段输出；Info 非空表示终端状态变了（退出、重新启动）。
@@ -48,7 +53,7 @@ type termState struct {
 	info    model.Terminal
 	env     []string
 	pty     ptyHandle
-	cmd     *exec.Cmd
+	proc    termProc
 	buf     []byte // 最后 termBacklog 字节输出
 	end     int64  // 累计输出字节数
 	subs    map[chan TermChunk]struct{}
@@ -191,17 +196,7 @@ func (e *Engine) terminalEnv(overlay map[string]string, cwd string) ([]string, s
 			m["LANG"] = "en_US.UTF-8"
 		}
 	}
-	shell := m["SHELL"]
-	if shell == "" || !isExecutable(shell) {
-		shell = ""
-		for _, c := range []string{"/bin/zsh", "/bin/bash", "/bin/sh"} {
-			if isExecutable(c) {
-				shell = c
-				break
-			}
-		}
-		m["SHELL"] = shell
-	}
+	shell := defaultShell(m)
 	out := make([]string, 0, len(m))
 	for k, v := range m {
 		out = append(out, k+"="+v)
@@ -217,17 +212,14 @@ func isExecutable(p string) bool {
 // startTerm 启动（或重新启动）终端里的 shell。
 func (e *Engine) startTerm(t *termState) error {
 	t.mu.Lock()
-	cmd := exec.Command(t.info.Shell, "-l")
-	cmd.Dir = t.info.Cwd
-	cmd.Env = t.env
-	p, err := startPTY(cmd, t.info.Cols, t.info.Rows)
+	p, tp, err := startPTY(t.info.Shell, shellArgs(t.info.Shell), t.info.Cwd, t.env, t.info.Cols, t.info.Rows)
 	if err != nil {
 		t.mu.Unlock()
 		return Errf("err.terminalStart", err.Error())
 	}
-	t.pty, t.cmd = p, cmd
+	t.pty, t.proc = p, tp
 	t.exited = make(chan struct{})
-	t.info.PID = cmd.Process.Pid
+	t.info.PID = tp.Pid()
 	t.info.StartedAt = time.Now()
 	t.info.Exited, t.info.ExitCode = false, 0
 	exited := t.exited
@@ -235,7 +227,7 @@ func (e *Engine) startTerm(t *termState) error {
 
 	readDone := make(chan struct{})
 	go e.termReader(t, p, readDone)
-	go e.termWaiter(t, cmd, p, exited, readDone)
+	go e.termWaiter(t, tp, p, exited, readDone)
 	return nil
 }
 
@@ -253,19 +245,10 @@ func (e *Engine) termReader(t *termState, p ptyHandle, done chan struct{}) {
 	}
 }
 
-func (e *Engine) termWaiter(t *termState, cmd *exec.Cmd, p ptyHandle, exited, readDone chan struct{}) {
-	err := cmd.Wait()
-	code := 0
+func (e *Engine) termWaiter(t *termState, tp termProc, p ptyHandle, exited, readDone chan struct{}) {
+	code, err := tp.Wait()
 	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			code = ee.ExitCode()
-			if code < 0 {
-				code = 128 + 1 // 被信号结束（多为挂断）
-			}
-		} else {
-			code = -1
-		}
+		code = -1
 	}
 	// shell 退出后把剩下的输出读完；后台任务还占着终端时最多等 500ms
 	select {
@@ -479,7 +462,9 @@ func (e *Engine) closeTerm(t *termState, grace time.Duration) {
 	if !alive {
 		return
 	}
-	_ = proc.SignalGroup(pid, "SIGHUP")
+	if p != nil {
+		p.Hangup()
+	}
 	go func() {
 		select {
 		case <-exited:
@@ -580,10 +565,7 @@ func (e *Engine) TerminalBusy(id string) (bool, string, error) {
 	if fg == 0 || fg == pid {
 		return false, "", nil
 	}
-	name := ""
-	if out, err := exec.Command("ps", "-o", "comm=", "-p", fmt.Sprint(fg)).Output(); err == nil {
-		name = filepath.Base(strings.TrimSpace(string(out)))
-	}
+	name := filepath.Base(proc.ProcessName(fg))
 	return true, strings.TrimPrefix(name, "-"), nil
 }
 

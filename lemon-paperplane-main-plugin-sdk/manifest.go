@@ -23,10 +23,25 @@ type Manifest struct {
 	Protocol    int     `json:"protocol"`
 	// Executable 相对插件目录、不带扩展名；Windows 上内核自动加 .exe。
 	// 为空表示纯声明插件：只贡献编辑器的语言着色、快捷键方案、配色主题等静态文件，内核从不启动进程。
-	Executable   string       `json:"executable,omitempty"`
+	Executable string `json:"executable,omitempty"`
+	// OS 限定能运行的系统（runtime.GOOS 取值，如 ["darwin"]）；为空表示全平台。别的系统上内核不加载、不打包。
+	OS           []string     `json:"os,omitempty"`
 	Dependencies []Dependency `json:"dependencies,omitempty"`
 	Activation   Activation   `json:"activation"`
 	Contributes  Contributes  `json:"contributes"`
+}
+
+// SupportsOS 判断插件能否在 goos 上运行。
+func (m Manifest) SupportsOS(goos string) bool {
+	if len(m.OS) == 0 {
+		return true
+	}
+	for _, o := range m.OS {
+		if o == goos {
+			return true
+		}
+	}
+	return false
 }
 
 // Engines 声明兼容的内核版本范围（npm semver 语法），对应 IDEA 的 since-build/until-build。

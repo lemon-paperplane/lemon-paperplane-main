@@ -13,6 +13,9 @@
   .pp-term .xterm { height: 100%; }
   .pp-term .xterm-viewport { background: transparent !important; }
   .pp-term .xterm .xterm-scrollable-element > .scrollbar > .slider { border-radius: 4px; }
+  /* Windows：xterm 有自己画的滚动条，视口的原生滚动条（经典样式，带箭头）藏起来；Mac 是浮动滚动条，本来就看不到 */
+  [data-platform="windows"] .pp-term .xterm-viewport { scrollbar-width: none; }
+  [data-platform="windows"] .pp-term .xterm-viewport::-webkit-scrollbar { display: none; }
 </style>
 </head>
 <body>
