@@ -353,8 +353,17 @@ type StoreEntry struct {
 	Icon        string                   `json:"icon,omitempty"` // URL
 	Engines     sdk.Engines              `json:"engines"`
 	Platforms   map[string]StorePlatform `json:"platforms"`
-	Installed   string                   `json:"installed,omitempty"` // 已安装版本
-	Compatible  bool                     `json:"compatible"`
+	// Versions 是在线商店给的全部可用版本（新到旧）；读取时挑第一个兼容本机的，替换上面的 version/engines/platforms
+	Versions   []StoreVersion `json:"versions,omitempty"`
+	Installed  string         `json:"installed,omitempty"` // 已安装版本
+	Compatible bool           `json:"compatible"`
+}
+
+// StoreVersion 是商店里一个条目的一个版本。
+type StoreVersion struct {
+	Version   string                   `json:"version"`
+	Engines   sdk.Engines              `json:"engines"`
+	Platforms map[string]StorePlatform `json:"platforms"`
 }
 
 type StorePlatform struct {

@@ -222,7 +222,7 @@ func (e *Engine) StoreList(ctx context.Context) ([]model.StoreEntry, error) {
 	if url == "" {
 		return []model.StoreEntry{}, nil
 	}
-	data, err := readURL(ctx, url)
+	data, err := readURL(ctx, withLocale(url))
 	if err != nil {
 		return nil, err
 	}
@@ -233,23 +233,40 @@ func (e *Engine) StoreList(ctx context.Context) ([]model.StoreEntry, error) {
 		return nil, err
 	}
 	// 索引里的相对地址相对索引本身解析（随 App 附带的离线商店用相对路径）
-	for i := range idx.Plugins {
-		for k, pf := range idx.Plugins[i].Platforms {
+	resolve := func(m map[string]model.StorePlatform) {
+		for k, pf := range m {
 			pf.URL = resolveRef(url, pf.URL)
-			idx.Plugins[i].Platforms[k] = pf
+			m[k] = pf
+		}
+	}
+	for i := range idx.Plugins {
+		resolve(idx.Plugins[i].Platforms)
+		for j := range idx.Plugins[i].Versions {
+			resolve(idx.Plugins[i].Versions[j].Platforms)
 		}
 		if idx.Plugins[i].Icon != "" {
 			idx.Plugins[i].Icon = resolveRef(url, idx.Plugins[i].Icon)
 		}
 	}
 	plat := runtime.GOOS + "-" + runtime.GOARCH
+	compatible := func(eng sdk.Engines, pfs map[string]model.StorePlatform) bool {
+		_, hasPlat := storePlatform(pfs, plat)
+		return hasPlat && (eng.Paperplane == "" || sdk.MatchVersion(eng.Paperplane, e.cfg.Version))
+	}
 	for i := range idx.Plugins {
 		en := &idx.Plugins[i]
 		if p := e.Plugins.Get(en.ID); p != nil {
 			en.Installed = p.Manifest.Version
 		}
-		_, hasPlat := storePlatform(en.Platforms, plat)
-		en.Compatible = hasPlat && (en.Engines.Paperplane == "" || sdk.MatchVersion(en.Engines.Paperplane, e.cfg.Version))
+		// 在线商店列出了多个版本：用最新的那个兼容本机（内核版本、平台）的
+		for _, v := range en.Versions {
+			if compatible(v.Engines, v.Platforms) {
+				en.Version, en.Engines, en.Platforms = v.Version, v.Engines, v.Platforms
+				break
+			}
+		}
+		en.Versions = nil
+		en.Compatible = compatible(en.Engines, en.Platforms)
 	}
 	return idx.Plugins, nil
 }
@@ -367,6 +384,18 @@ func (e *Engine) ReloadPlugins() {
 	e.rulesMu.Unlock()
 	e.InvalidateToolchains()
 	e.Bus.Publish(model.EvPlugins, nil)
+}
+
+// withLocale 给在线商店的索引地址带上界面语言（商店按它返回名称、简介）；本地文件不变。
+func withLocale(u string) string {
+	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") || strings.Contains(u, "locale=") {
+		return u
+	}
+	sep := "?"
+	if strings.Contains(u, "?") {
+		sep = "&"
+	}
+	return u + sep + "locale=" + i18n.Locale()
 }
 
 func isLocalRef(u string) bool { return strings.HasPrefix(u, "file://") || filepath.IsAbs(u) }

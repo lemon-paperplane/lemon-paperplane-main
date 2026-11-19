@@ -184,6 +184,8 @@ Content-Type: application/json
 | `plugin.settings` | `{pluginId, values}` | – |
 | `store.list` | `{refresh 可选}` | `[StoreEntry]` |
 | `store.install` | `{pluginId}` | `Task` |
+
+商店索引：设置里的 `storeIndexUrl`（在线商店填 `https://<商店服务>/api/public/v1/plugin/index.json`，服务端在 lemon-paperplane-store），没填时用随 App 附带的离线索引（Resources/store/index.json）。读在线索引时自动带上 `?locale=<界面语言>`；索引条目带 `versions`（新到旧）时，内核挑第一个和本机内核版本（engines.paperplane）、平台都兼容的版本作为 `version/platforms`，所以新版本要求更高的客户端时，旧客户端仍能装到它能用的版本。
 | `view.render` | `{plugin, view, projectId 可选, moduleId 可选, runId 可选, state 可选}` | `sdk.ViewRenderResult` |
 | `view.event` | `{plugin, view, event, values, projectId 可选, moduleId 可选, runId 可选, state 可选}` | `sdk.ViewEventResult` |
 | `<pluginId>.<tool>` | 插件声明的 inputSchema（scope=project/module 时加 `projectId`/`moduleId`） | 插件返回 |
