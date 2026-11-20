@@ -302,14 +302,14 @@ Mac 实现都在 `LemonPaperplane/Components/`、`Design/`、`Renderers/`；Wind
 
 ## 13. App 图标
 
-`shared/branding/app-icon.svg`：1024 画布，824 圆角方块（圆角 186，macOS 图标网格），蓝色 #2E66E8 底；白色折纸飞机（两面明暗 + 下方折痕），左下柠檬黄（#FFD43B）柠檬点缀。只用 SVG 子集（纯色、无渐变），各平台用自己的工具从它生成位图：
+`shared/branding/app-icon.svg`：1024 画布，824 圆角方块（圆角 186，macOS 图标网格），白色底；正中一架指向右上的对称纸飞机：两片机翼用柠檬黄（亮面 #FFE53B、暗面 #F4C61A），中间龙骨用绿色 #5BD94C，配色取自 LemonIT 的 logo，瓣与瓣之间留白、轻微圆角（呼应 logo 的柠檬瓣）。只用 SVG 子集（纯色、无渐变），各平台用自己的工具从它生成位图：
 
 ```
 cd lemon-paperplane-main-macos/PaperplaneKit
 swift run pp-icongen ../../shared/branding/app-icon.svg ../LemonPaperplane/Resources/Assets.xcassets/AppIcon.appiconset
 ```
 
-菜单栏 / 托盘图标 `shared/branding/menubar.svg`：18×18 单色纸飞机，按模板图渲染。
+菜单栏 / 托盘图标 `shared/branding/menubar.svg`：18×18 单色纸飞机（和 App 图标同一个轮廓：两片机翼 + 龙骨，之间留缝），按模板图渲染。
 
 ---
 
