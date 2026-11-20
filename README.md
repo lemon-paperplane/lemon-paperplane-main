@@ -2,6 +2,20 @@
 
 没有编辑器的工程管理器。把 IntelliJ IDEA / WebStorm / PyCharm / GoLand 里「导入即识别、自动装依赖和工具链、一键运行、看日志、报错一键修复、Git 管理」做成一个轻量的原生工具；所有功能同时提供 HTTP API、MCP 工具和命令行，AI 可以直接驱动。
 
+## 下载
+
+[![构建](https://github.com/lemon-paperplane/lemon-paperplane-main/actions/workflows/build.yml/badge.svg)](https://github.com/lemon-paperplane/lemon-paperplane-main/actions/workflows/build.yml)
+
+每次提交到 main 都会自动构建全部安装包，放在 [Releases → 最新构建](https://github.com/lemon-paperplane/lemon-paperplane-main/releases/tag/latest-build)；推送 `v0.2.0` 这样的标签时另发正式版本。
+
+| 系统 | 文件 |
+|---|---|
+| macOS 13+（Apple 芯片与 Intel） | `LemonPaperplane-<版本>-macos.dmg` |
+| Windows 10/11（x64、ARM64） | `LemonPaperplane-<版本>-windows-<架构>-setup.exe` 安装包，或 `.zip` 免安装版 |
+| Linux 服务器（无界面，10 个架构） | `paperplane-<版本>-linux-<架构>`，见[部署说明](lemon-paperplane-main-linux-headless/README.md) |
+
+手机版（Android，iOS 与 HarmonyOS 计划中）在 [lemon-paperplane-mobile](https://github.com/lemon-paperplane/lemon-paperplane-mobile)。
+
 ## 仓库结构
 
 | 目录 | 说明 |

@@ -1,0 +1,214 @@
+# 自动构建与发布：提交到 main 后构建全部安装包，覆盖更新「最新构建」发行版；推送 v 开头的标签（如 v0.2.0）时另发正式版本。
+#   macOS：通用 DMG（Apple 芯片与 Intel，macOS 13+）
+#   Windows：x64 / arm64 的安装包与免安装 zip
+#   Linux 无头版：10 个架构的单个可执行文件
+# 构建用的就是仓库根目录的一键构建脚本（build.sh / build.cmd），本地构建与云端结果一致。
+#
+# Mac 签名公证（可选，仓库 Settings → Secrets and variables → Actions 里添加后自动启用）：
+#   MACOS_CERT_P12         Developer ID Application 证书（.p12 的 base64）
+#   MACOS_CERT_PASSWORD    .p12 的密码
+#   MACOS_SIGN_IDENTITY    签名身份，如 "Developer ID Application: 公司名 (TEAMID)"
+#   NOTARY_KEY_P8          App Store Connect API 密钥（.p8 的 base64）
+#   NOTARY_KEY_ID / NOTARY_ISSUER_ID
+name: 构建
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    # 只改文档时不重新构建
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # 指定下载源，脚本不再测速挑镜像（云端在海外）
+  GOPROXY: https://proxy.golang.org,direct
+  NPM_REGISTRY: https://registry.npmjs.org
+  PIP_INDEX_URL: https://pypi.org/simple
+  # 插件源码从 GitHub 下载时用（避免匿名接口限流）
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  version:
+    name: 版本号
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          # 标签 v0.2.0 → 0.2.0；main 分支留空（脚本取 Xcode 工程里的版本号）
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"; else echo "version=" >> "$GITHUB_OUTPUT"; fi
+
+  macos:
+    name: macOS
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 60
+    concurrency:
+      group: macos-${{ github.ref }}
+      cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: lemon-paperplane-main-core/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 导入签名证书（配置了才做）
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          if [ -z "$MACOS_CERT_P12" ]; then echo "没有配置签名证书：DMG 用 ad-hoc 签名"; exit 0; fi
+          kc="$RUNNER_TEMP/build.keychain-db"; kp="$(uuidgen)"
+          security create-keychain -p "$kp" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kp" "$kc"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kp" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          if [ -n "$NOTARY_KEY_P8" ]; then
+            echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            xcrun notarytool store-credentials paperplane-notary --key "$RUNNER_TEMP/notary.p8" \
+              --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --keychain "$kc"
+            rm -f "$RUNNER_TEMP/notary.p8"
+            echo "NOTARY_PROFILE=paperplane-notary" >> "$GITHUB_ENV"
+            echo "NOTARY_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+          fi
+      - name: 构建 DMG
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY || '-' }}
+        run: ./build.sh ${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/macos/*.dmg
+          if-no-files-found: error
+
+  linux-headless:
+    name: Linux 无头版
+    needs: version
+    # build.sh 只在 macOS 上运行；Go 交叉编译 10 个 Linux 架构
+    runs-on: macos-15
+    timeout-minutes: 60
+    concurrency:
+      group: linux-headless-${{ github.ref }}
+      cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: lemon-paperplane-main-core/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 构建
+        run: ./build.sh ${{ needs.version.outputs.version }} --linux-headless
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-headless
+          path: dist/linux-headless/paperplane-*
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 60
+    concurrency:
+      group: windows-${{ github.ref }}
+      cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: lemon-paperplane-main-core/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 构建安装包与 zip
+        shell: pwsh
+        run: |
+          $v = "${{ needs.version.outputs.version }}"
+          if ($v) { .\build.cmd -Version $v } else { .\build.cmd }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/windows/*.exe
+            dist/windows/*.zip
+          if-no-files-found: error
+
+  release:
+    name: 发布
+    needs: [version, macos, linux-headless, windows]
+    runs-on: ubuntu-latest
+    # 发布过程中不要被新的提交打断（否则可能只删了旧的、没建新的）
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: 校验值与说明
+        run: |
+          cd out
+          sha256sum * > SHA256SUMS
+          ls -la
+          cd ..
+          dmg=$(cd out && ls *.dmg | head -1)
+          ver="${dmg#LemonPaperplane-}"; ver="${ver%-macos.dmg}"
+          {
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              echo "柠檬纸飞机 $ver"
+            else
+              echo "main 分支最新提交的自动构建：[\`${GITHUB_SHA::7}\`](https://github.com/$GH_REPO/commit/$GITHUB_SHA) $(date -u '+%Y-%m-%d %H:%M') UTC"
+              echo
+              echo "> $(gh api "repos/$GH_REPO/commits/$GITHUB_SHA" --jq '.commit.message' | head -1)"
+            fi
+            echo
+            echo "| 系统 | 下载 |"
+            echo "|---|---|"
+            echo "| macOS 13+（Apple 芯片与 Intel） | \`LemonPaperplane-$ver-macos.dmg\`：打开后把图标拖进「应用程序」 |"
+            echo "| Windows 10/11 x64 | \`LemonPaperplane-$ver-windows-x64-setup.exe\` 安装包（装到当前用户），或 \`-windows-x64.zip\` 免安装版 |"
+            echo "| Windows 11 ARM | \`LemonPaperplane-$ver-windows-arm64-setup.exe\` / \`-windows-arm64.zip\` |"
+            echo "| Linux 服务器（无界面） | \`paperplane-$ver-linux-<架构>\` 单个可执行文件：\`chmod +x\` 后运行 \`./paperplane-… serve\`，见 [说明](https://github.com/$GH_REPO/blob/main/lemon-paperplane-main-linux-headless/README.md) |"
+            echo
+            echo "首次打开：macOS 版没有用开发者证书签名，被拦时到「系统设置 → 隐私与安全性」点「仍要打开」；Windows 版没有代码签名，SmartScreen 提示时点「更多信息 → 仍要运行」。所有文件的 SHA-256 在 \`SHA256SUMS\` 里。"
+          } > notes.md
+          cat notes.md
+      - name: 正式版本（标签）
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" out/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" out/* --title "柠檬纸飞机 ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag --latest
+          fi
+      - name: 最新构建（main）
+        if: github.ref == 'refs/heads/main'
+        run: |
+          tag=latest-build
+          # 已经有正式版本时，「最新构建」标成预发布，右侧「最新版本」留给正式版本
+          if gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -q '^v'; then flag=--prerelease; else flag=--latest; fi
+          gh release delete "$tag" --cleanup-tag --yes >/dev/null 2>&1 || true
+          gh release create "$tag" out/* --target "$GITHUB_SHA" --title "最新构建（main）" --notes-file notes.md $flag
