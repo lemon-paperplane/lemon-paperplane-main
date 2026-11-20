@@ -760,7 +760,8 @@ public sealed class AppModel : PPObservable
         if (running > 0)
         {
             MainWindow.Current?.ShowMainWindow();
-            Dialogs.Confirm(L.T("quit.confirm.title"), L.T("quit.confirm.message", running), () => QuitNow(local),
+            // 这里的 Dialogs 是本类的 DialogStore 属性，确认框要用静态类 Dialogs
+            global::LemonPaperplane.Dialogs.Confirm(L.T("quit.confirm.title"), L.T("quit.confirm.message", running), () => QuitNow(local),
                 ok: L.T("quit.confirm.ok"), danger: true);
             return;
         }
