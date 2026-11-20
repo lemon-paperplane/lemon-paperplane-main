@@ -1,0 +1,20 @@
+{
+  "vcs.mobile.clone.background": "Continue in Background",
+  "vcs.mobile.commit.allTracked": "Will commit {0} modified files",
+  "vcs.mobile.commit.allTrackedInfo": "When nothing is staged, all modified tracked files are committed (untracked files are not included). To commit only some of them, stage them first.",
+  "vcs.mobile.diff.nextFile": "Next File",
+  "vcs.mobile.diff.prevFile": "Previous File",
+  "vcs.mobile.home.empty": "No Git repositories yet",
+  "vcs.mobile.home.otherWorkspace": "Other",
+  "vcs.mobile.noPlugin": "The server has no version control plugin installed",
+  "vcs.mobile.open": "Open",
+  "vcs.mobile.openInEditor": "Open in Editor",
+  "vcs.mobile.remote.edit": "Edit Remote",
+  "vcs.mobile.remote.pushUrl": "Push URL",
+  "vcs.mobile.remote.pushUrlSame": "Same as URL",
+  "vcs.mobile.remote.remove": "Remove Remote",
+  "vcs.mobile.remote.removeMessage": "Removes the remote and its remote-tracking branches from this repository only. The remote repository itself is not affected.",
+  "vcs.mobile.remote.removeTitle": "Remove remote {0}?",
+  "vcs.mobile.remotes": "Remotes",
+  "vcs.mobile.remotes.empty": "No remotes yet"
+}

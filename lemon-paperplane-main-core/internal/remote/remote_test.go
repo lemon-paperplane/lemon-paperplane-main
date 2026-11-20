@@ -134,3 +134,16 @@ func TestPlainUsersMigrated(t *testing.T) {
 		t.Fatal("short plaintext password accepted")
 	}
 }
+
+func TestQRCode(t *testing.T) {
+	code := EncodeCode(CodePayload{URLs: []string{"https://192.168.1.20:47290", "https://[2408:8000::1]:47290", "https://my-mac.local:47290"},
+		Fingerprint: "sha256:" + strings.Repeat("ab", 32), Token: "ppk_0123abcd_" + strings.Repeat("x", 43), Name: "my-mac.local"})
+	svg, err := QRSVG(code)
+	if err != nil || !strings.HasPrefix(svg, "<svg") || !strings.Contains(svg, "M") {
+		t.Fatalf("svg: %v %.80s", err, svg)
+	}
+	q, err := QRTerminal(code)
+	if err != nil || strings.Count(q, "\n") < 20 {
+		t.Fatalf("terminal: %v", err)
+	}
+}

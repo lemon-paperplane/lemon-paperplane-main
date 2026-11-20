@@ -8,7 +8,7 @@ using static LemonPaperplane.UI;
 namespace LemonPaperplane;
 
 /// <summary>
-/// 运行中服务的地址链接（docs/remote.md 5.4）。本机：一个链接直接打开。
+/// 运行中服务的地址链接（docs/remote.md 5.5）。本机：一个链接直接打开。
 /// 连着远程服务器、地址是服务器本机（localhost / 127.0.0.1 / 0.0.0.0）时，按运行配置的 remoteLinks 显示两个：
 /// 「⇄ localhost:本机端口」（先在本机内核上 gateway.forward 再打开）和「服务器主机:端口」（把 localhost 换成服务器地址的主机）。
 /// </summary>

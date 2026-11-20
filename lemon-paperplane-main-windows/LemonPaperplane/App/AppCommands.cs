@@ -14,8 +14,8 @@ public static class AppCommands
         Shortcuts.Register("Ctrl+F", Find);
         Shortcuts.Register("Ctrl+R", Actions.RunCurrent);
         Shortcuts.Register("Ctrl+.", Actions.StopCurrent);
-        Shortcuts.Register("Ctrl+Q", () => AppModel.Shared.Quit(false));
-        Shortcuts.Register("Ctrl+Alt+Q", () => AppModel.Shared.Quit(true));
+        // 退出 = 界面和本机内核一起退出（内核在跑，托盘就一定有图标，不留看不见的内核）
+        Shortcuts.Register("Ctrl+Q", () => AppModel.Shared.Quit());
     }
 
     public static void OpenSettings()

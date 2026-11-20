@@ -37,7 +37,7 @@ public sealed class RunConfigDialog : AsyncDialog
     private readonly DispatcherTimer _liveTimer;
     private int _loadGen;
     private bool _liveBusy;
-    /// <summary>连接远程服务器时运行地址的打开方式（docs/remote.md 5.4）：至少一个。</summary>
+    /// <summary>连接远程服务器时运行地址的打开方式（docs/remote.md 5.5）：至少一个。</summary>
     private readonly RemoteLinks _initialLinks;
     private readonly State<bool> _linkForward;
     private readonly State<bool> _linkDirect;

@@ -1,4 +1,5 @@
 import PaperplaneKit
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 /// 设置页里的分组锚点
@@ -470,6 +471,21 @@ enum ConnectionCodeDialog {
             PPDialog(title: tr("host.keys.created"), width: M.dialogWidth, onClose: close) {
                 VStack(alignment: .leading, spacing: M.lg) {
                     PPAlert(tone: "warning", title: tr("host.keys.created.message"))
+                    // 手机客户端扫码添加服务器
+                    if let qr = QRCodeImage.make(code) {
+                        HStack(spacing: M.lg) {
+                            Image(nsImage: qr)
+                                .interpolation(.none)
+                                .resizable()
+                                .frame(width: 168, height: 168)
+                                .padding(M.sm)
+                                .background(RoundedRectangle(cornerRadius: M.radiusMD).fill(Color.white))
+                                .overlay(RoundedRectangle(cornerRadius: M.radiusMD).strokeBorder(theme.border, lineWidth: 1))
+                            Text(tr("host.keys.qr.hint")).foregroundColor(theme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                    }
                     Text(code)
                         .font(.pp(.mono))
                         .textSelection(.enabled)
@@ -571,4 +587,19 @@ struct AccountPasswordDialog: View {
     }
 
     private func close() { AppModel.shared.dialogs.dismiss(id) }
+}
+
+/// 连接码二维码（CoreImage 生成，纠错等级 L，和内核 / 命令行一致）
+enum QRCodeImage {
+    static func make(_ text: String) -> NSImage? {
+        let f = CIFilter.qrCodeGenerator()
+        f.message = Data(text.utf8)
+        f.correctionLevel = "L"
+        guard let ci = f.outputImage else { return nil }
+        let scaled = ci.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        let rep = NSCIImageRep(ciImage: scaled)
+        let img = NSImage(size: rep.size)
+        img.addRepresentation(rep)
+        return img
+    }
 }

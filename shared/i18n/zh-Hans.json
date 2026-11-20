@@ -307,7 +307,6 @@
   "launch.summary": "{0} 项 · {1} 个运行中",
   "menu.find": "查找",
   "menu.quitAll": "退出并停止全部服务",
-  "menu.quitUI": "退出界面（服务继续运行）",
   "menu.run": "运行",
   "menu.runProject": "运行当前工程",
   "menu.settings": "设置…",
@@ -1044,7 +1043,7 @@
   "host.error": "没能开启：{0}",
   "host.port": "端口",
   "host.autostart": "开机自动启动后台服务",
-  "host.autostart.info": "不打开界面也能被连接；关掉后只有后台服务在运行时才能连接。",
+  "host.autostart.info": "登录后自动启动后台服务（菜单栏显示图标），不用打开窗口也能被连接。",
   "host.addresses": "地址",
   "host.fingerprint": "证书指纹",
   "host.fingerprint.info": "其他设备第一次连接时用它核对，确认连的是这台电脑。",
@@ -1116,5 +1115,9 @@
   "host.audit.event.user.remove": "删除账号",
   "host.audit.event.config": "修改配置",
   "host.audit.event.op": "远程操作",
-  "host.audit.event.tunnel": "端口转发"
+  "host.audit.event.tunnel": "端口转发",
+  "quit.confirm.title": "退出柠檬纸飞机？",
+  "quit.confirm.message": "退出会同时停止本机 {0} 个正在运行的服务。",
+  "quit.confirm.ok": "退出并停止",
+  "host.keys.qr.hint": "用手机版柠檬纸飞机扫这个二维码，就能添加这台服务器。"
 }

@@ -282,6 +282,8 @@ func runDaemonOpts(args []string, dopt daemonOpts) error {
 	if dopt.serve {
 		printServeBanner(rm.Status())
 	}
+	// 内核在跑，菜单栏 / 托盘就要有图标：界面没开时以菜单栏模式拉起
+	go ensureUI(exe, dopt.serve, logger)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	stopRuns := true

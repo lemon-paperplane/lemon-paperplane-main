@@ -14,18 +14,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         AppDelegate.shared = self
     }
 
+    /// 已经走过退出流程（停了本机内核）：再收到 terminate 直接退出
+    static var quitting = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 内核拉起界面时（开机自动启动、命令行、AI 的 MCP 桥）带 --background：只显示菜单栏图标，不开窗口
+        let background = ProcessInfo.processInfo.arguments.contains("--background")
         Task { @MainActor in
             AppModel.shared.start()
-            self.showMainWindow()
+            if background {
+                NSApp.setActivationPolicy(.accessory)
+            } else {
+                self.showMainWindow()
+            }
         }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    /// 有未保存的编辑窗口时不退出，让这些窗口各自提示（网页确认后会关闭窗口）
+    /// Dock 的「退出」、注销 / 关机也和菜单里的退出一样：界面和本机内核一起退出，不留看不见的内核。
+    /// 有未保存的编辑窗口时不退出，让这些窗口各自提示（网页确认后会关闭窗口）。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        EditorWindows.shared.prepareForQuit() ? .terminateNow : .terminateCancel
+        if AppDelegate.quitting {
+            return EditorWindows.shared.prepareForQuit() ? .terminateNow : .terminateCancel
+        }
+        // 注销、重启、关机时系统带退出原因：不弹确认
+        let systemQuit = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: kAEQuitReason) != nil
+        Task { @MainActor in
+            let ok = await AppModel.shared.quit(confirm: !systemQuit, terminate: false)
+            NSApp.reply(toApplicationShouldTerminate: ok)
+        }
+        return .terminateLater
     }
 
     /// 有主窗口或编辑窗口时显示 Dock 图标与菜单栏；全部关掉后变成仅菜单栏图标

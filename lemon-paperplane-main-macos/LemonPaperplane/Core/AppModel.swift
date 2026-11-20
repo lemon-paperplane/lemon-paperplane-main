@@ -497,22 +497,41 @@ final class AppModel: ObservableObject {
 
     // MARK: 退出
 
-    /// 退出界面；stopAll 时同时让 daemon 停止全部服务并退出
-    func quit(stopServices: Bool) {
+    /// 退出：界面和本机内核一起退出——内核在跑，菜单栏就一定有图标，不留用户看不见的内核。
+    /// 本机还有运行中的服务时先确认；连着远程服务器时，远程服务器上的服务不受影响。
+    /// terminate=false 时由调用方回复系统（Dock 的「退出」、注销关机走 applicationShouldTerminate）。
+    @discardableResult
+    func quit(confirm: Bool = true, terminate: Bool = true) async -> Bool {
         // 编辑窗口有未保存的文件：先让它们提示，不退出也不停服务
         guard EditorWindows.shared.prepareForQuit() else {
             toasts.show("warning", tr("editorWindow.unsaved"))
-            return
+            return false
         }
-        events.stop()
-        let gateway = openedGatewayId
         let local = localAPI
-        Task {
-            // 关掉本界面开的网关（连同端口转发）；本机内核卡住时不等
-            if let gateway, let local { try? await local.send("gateway.close", ["id": .string(gateway)], timeout: 2) }
-            // 只停本机：远程服务器上的服务不受界面退出影响（远程也不允许调 system.shutdown）
-            if stopServices, let local { try? await local.shutdown(stopRuns: true) }
-            NSApp.terminate(nil)
+        if confirm, let local {
+            let n = (try? await local.runs(active: true))?.count ?? 0
+            if n > 0 && !confirmQuit(running: n) { return false }
         }
+        AppDelegate.quitting = true
+        events.stop()
+        // 关掉本界面开的网关（连同端口转发）；本机内核卡住时不等
+        if let gateway = openedGatewayId, let local { try? await local.send("gateway.close", ["id": .string(gateway)], timeout: 2) }
+        // 只停本机：远程服务器上的服务不受界面退出影响（远程也不允许调 system.shutdown）
+        if let local { try? await local.shutdown(stopRuns: true) }
+        if terminate { NSApp.terminate(nil) }
+        return true
+    }
+
+    /// 菜单里的「退出」
+    func quit() { Task { await quit(confirm: true, terminate: true) } }
+
+    private func confirmQuit(running n: Int) -> Bool {
+        let a = NSAlert()
+        a.messageText = tr("quit.confirm.title")
+        a.informativeText = tr("quit.confirm.message", n)
+        a.addButton(withTitle: tr("quit.confirm.ok"))
+        a.addButton(withTitle: tr("common.cancel"))
+        NSApp.activate(ignoringOtherApps: true)
+        return a.runModal() == .alertFirstButtonReturn
     }
 }

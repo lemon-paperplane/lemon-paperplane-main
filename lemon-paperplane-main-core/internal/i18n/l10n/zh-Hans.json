@@ -125,5 +125,6 @@
   "fs.cannotOpen": "打不开：{0}",
   "fs.noPermission": "没有权限读取：{0}",
   "fs.parentMissing": "上一级文件夹不存在：{0}",
-  "fs.exists": "已经有同名的文件或文件夹：{0}"
+  "fs.exists": "已经有同名的文件或文件夹：{0}",
+  "run.interrupted": "后台服务退出时运行被中断"
 }

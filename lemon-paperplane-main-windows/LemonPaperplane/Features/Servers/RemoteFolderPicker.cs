@@ -12,7 +12,7 @@ namespace LemonPaperplane;
 public enum PathKind { Folder, File, Any }
 
 /// <summary>
-/// 选文件夹 / 文件的统一入口（docs/remote.md 5.4，对应 Mac PathPicker）：本机用系统对话框；连着远程服务器时弹
+/// 选文件夹 / 文件的统一入口（docs/remote.md 5.5，对应 Mac PathPicker）：本机用系统对话框；连着远程服务器时弹
 /// 「选择服务器上的文件夹」（fs.browse），本机路径在服务器上不存在。结果是服务器上的路径（按服务器的分隔符）。
 /// </summary>
 public static class ServerFiles

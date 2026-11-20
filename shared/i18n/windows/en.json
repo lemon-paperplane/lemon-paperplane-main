@@ -12,5 +12,6 @@
   "terminal.info": "A terminal is PowerShell (PowerShell 7 when installed) opened in a project directory, with the project's environment variables. Terminals are kept by the background service: switching pages or closing the window does not interrupt them, and output catches up when you come back. Typing exit closes the terminal. Ctrl+Shift+K clears the screen; Ctrl+C copies the selection, or interrupts the running command when nothing is selected; Ctrl-click opens a link in the browser.",
   "settings.cli.info": "Adds the installation folder to your user PATH so you can use paperplane run, logs and more in a terminal (takes effect in new terminals).",
   "menubar.openWindow": "Open Main Window",
-  "server.err.keychain": "Could not save the access key to Windows Credential Manager"
+  "server.err.keychain": "Could not save the access key to Windows Credential Manager",
+  "host.autostart.info": "Starts the background service at login (with its tray icon), so this computer can be reached without opening the window."
 }

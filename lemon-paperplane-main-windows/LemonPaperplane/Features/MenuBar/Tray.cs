@@ -208,9 +208,12 @@ public sealed class TrayContent : PPView
             MainWindow.Current?.ShowMainWindow();
         }).Id("tray.open"));
         actions.Children.Add(new PPDivider(subtle: true).Margins(0, M.Xs, 0, M.Xs));
-        actions.Children.Add(TrayAction(L.T("menu.quitUI"), "log-out", () => _model.Quit(false)).Id("tray.quitUI"));
-        // 只停本机的服务：远程服务器的服务不受界面退出影响
-        actions.Children.Add(TrayAction(L.T(_model.IsRemote ? "menu.quitAll.local" : "menu.quitAll"), "power", () => _model.Quit(true), destructive: true).Id("tray.quitAll"));
+        // 退出 = 界面和本机内核一起退出：只停本机的服务，远程服务器的服务不受影响
+        actions.Children.Add(TrayAction(L.T(_model.IsRemote ? "menu.quitAll.local" : "menu.quitAll"), "power", () =>
+        {
+            Tray.Shared.HideFlyout();
+            _model.Quit();
+        }, destructive: true).Id("tray.quitAll"));
         col.Children.Add(actions.Pad(M.Xs));
         return col.W(340);
     }

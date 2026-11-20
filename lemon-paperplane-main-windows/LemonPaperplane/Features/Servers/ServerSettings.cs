@@ -436,25 +436,54 @@ public static class HostDialogs
             var address = v.TryGetValue("address", out var av) ? av.StringValue()?.Trim() : null;
             var r = await AppModel.Shared.Client().RemoteKeyCreateAsync(name, address);
             await host.Load();
-            Application.Current.Dispatcher.BeginInvoke(new Action(() => ShowCode(r.Code)), DispatcherPriority.Background);
+            Application.Current.Dispatcher.BeginInvoke(new Action(() => ShowCode(r.Code, r.QrSvg)), DispatcherPriority.Background);
         }, ok: L.T("host.keys.add"));
     }
 
     /// <summary>连接码只显示这一次（复制按钮；提示它等同于登录凭据）。</summary>
-    public static void ShowCode(string code)
+    public static void ShowCode(string code, string qrSvg = "")
     {
         const string id = "connection-code";
         var close = new PPButton(L.T("common.close"), () => Dialogs.Dismiss(id)).Id("dialog.cancel");
         var copy = new PPButton(L.T("host.copy"), () => Actions.Copy(code, L.T("host.copied")), icon: "copy", kind: PPButtonKind.Primary).Id("host.code.copy");
-        var col = VStack(M.Lg,
-            new PPAlert("warning", L.T("host.keys.created.message")),
-            Box(Selectable(code, Typo.Mono)).Pad(M.Md).Rounded(M.RadiusMD).Bg(ColorToken.BgCode).Id("host.code"));
+        var col = VStack(M.Lg, new PPAlert("warning", L.T("host.keys.created.message")));
+        // 手机客户端扫码添加服务器
+        if (QrCodeView(qrSvg) is { } qr)
+        {
+            var hint = Paragraph(L.T("host.keys.qr.hint"), Typo.Body, ColorToken.TextSecondary);
+            hint.VerticalAlignment = VerticalAlignment.Center;
+            col.Children.Add(HStack(M.Lg, qr, hint.Flex()));
+        }
+        col.Children.Add(Box(Selectable(code, Typo.Mono)).Pad(M.Md).Rounded(M.RadiusMD).Bg(ColorToken.BgCode).Id("host.code"));
         col.Align = CrossAlign.Stretch;
         Dialogs.Present(id, new PPDialog(L.T("host.keys.created"), col, new UIElement[] { close, copy }, M.DialogWidth, () => Dialogs.Dismiss(id))
         {
             DefaultButton = copy,
             CancelButton = close,
         });
+    }
+
+    /// <summary>内核给的二维码 SVG（一个 path，M/h/v/z 指令）画成 WPF 图形：白底黑块、不做抗锯齿。</summary>
+    private static UIElement? QrCodeView(string svg)
+    {
+        var d = System.Text.RegularExpressions.Regex.Match(svg ?? "", "\\bd=\"([^\"]+)\"");
+        var vb = System.Text.RegularExpressions.Regex.Match(svg ?? "", "viewBox=\"0 0 (\\d+) (\\d+)\"");
+        if (!d.Success || !vb.Success) return null;
+        try
+        {
+            var n = double.Parse(vb.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            var path = new System.Windows.Shapes.Path { Data = Geometry.Parse(d.Groups[1].Value), Fill = Brushes.Black };
+            var canvas = new System.Windows.Controls.Canvas { Width = n, Height = n, Background = Brushes.White };
+            canvas.Children.Add(path);
+            RenderOptions.SetEdgeMode(canvas, EdgeMode.Aliased);
+            var box = new System.Windows.Controls.Viewbox { Width = 168, Height = 168, Child = canvas };
+            return new System.Windows.Controls.Border
+            {
+                Background = Brushes.White, Padding = new Thickness(M.Sm), CornerRadius = new CornerRadius(M.RadiusMD),
+                BorderBrush = Theme.Brush(ColorToken.Border), BorderThickness = new Thickness(1), Child = box,
+            };
+        }
+        catch { return null; }
     }
 
     /// <summary>添加账号（name 为 null）或给已有账号设置密码：至少 10 位、输两遍。</summary>

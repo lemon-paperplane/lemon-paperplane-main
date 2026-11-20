@@ -1,0 +1,20 @@
+{
+  "vcs.mobile.clone.background": "后台继续",
+  "vcs.mobile.commit.allTracked": "将提交 {0} 个已修改的文件",
+  "vcs.mobile.commit.allTrackedInfo": "没有暂存任何文件时，提交全部已修改的已跟踪文件（不含未跟踪文件）。只想提交其中一部分时，先逐个暂存。",
+  "vcs.mobile.diff.nextFile": "下一个文件",
+  "vcs.mobile.diff.prevFile": "上一个文件",
+  "vcs.mobile.home.empty": "还没有 Git 仓库",
+  "vcs.mobile.home.otherWorkspace": "其他",
+  "vcs.mobile.noPlugin": "服务器没有安装版本控制插件",
+  "vcs.mobile.open": "打开",
+  "vcs.mobile.openInEditor": "在编辑器中打开",
+  "vcs.mobile.remote.edit": "修改远程",
+  "vcs.mobile.remote.pushUrl": "推送地址",
+  "vcs.mobile.remote.pushUrlSame": "与地址相同",
+  "vcs.mobile.remote.remove": "删除远程",
+  "vcs.mobile.remote.removeMessage": "只删除本仓库里的远程配置和对应的远程分支引用，不影响远程仓库本身。",
+  "vcs.mobile.remote.removeTitle": "删除远程 {0}？",
+  "vcs.mobile.remotes": "远程仓库",
+  "vcs.mobile.remotes.empty": "还没有远程仓库"
+}

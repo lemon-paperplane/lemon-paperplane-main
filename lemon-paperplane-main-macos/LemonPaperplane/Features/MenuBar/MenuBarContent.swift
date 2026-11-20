@@ -58,10 +58,10 @@ struct MenuBarContent: View {
                     AppDelegate.shared?.showMainWindow()
                 }
                 PPDivider(subtle: true).padding(.vertical, M.xs)
-                MenuBarAction(title: tr("menu.quitUI"), icon: "log-out") { model.quit(stopServices: false) }
-                // 只停本机的服务：连着远程服务器时文案写明「本机」
+                // 退出 = 界面和本机内核一起退出：只停本机的服务，连着远程服务器时文案写明「本机」
                 MenuBarAction(title: servers.isRemote ? tr("menu.quitAll.local") : tr("menu.quitAll"), icon: "power", destructive: true) {
-                    model.quit(stopServices: true)
+                    MenuBarWindow.dismiss()
+                    model.quit()
                 }
             }
             .padding(M.xs)

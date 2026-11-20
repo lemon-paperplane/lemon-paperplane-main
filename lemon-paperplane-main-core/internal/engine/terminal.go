@@ -61,6 +61,7 @@ type termState struct {
 	exited  chan struct{} // 当前进程结束
 	closing bool
 	removed bool
+	log     *termLog // 完整输出落盘（termlog.go）
 }
 
 // TerminalCreateParams 是 terminal.create 的参数。
@@ -120,6 +121,7 @@ func (e *Engine) TerminalCreate(in TerminalCreateParams) (*model.Terminal, error
 	t := &termState{
 		info: model.Terminal{ID: store.NewID(), WorkspaceID: wsID, ProjectID: in.ProjectID, Name: name, Cwd: cwd, Shell: shell, Cols: cols, Rows: rows},
 		env:  env, subs: map[chan TermChunk]struct{}{}, input: make(chan []byte, termInputQ),
+		log: &termLog{dir: e.termLogDir()},
 	}
 	e.termMap()[t.info.ID] = t
 	e.termOrder = append(e.termOrder, t.info.ID)
@@ -294,6 +296,7 @@ func (e *Engine) termWriter(t *termState) {
 func (t *termState) appendOutput(b []byte) {
 	t.mu.Lock()
 	off := t.end
+	t.log.write(t.info.ID, off, b)
 	t.end += int64(len(b))
 	t.buf = append(t.buf, b...)
 	if over := len(t.buf) - termBacklog; over > 0 {
@@ -492,6 +495,7 @@ func (e *Engine) removeTerm(id string) {
 		return
 	}
 	t.mu.Lock()
+	t.log.close(id)
 	if !t.removed {
 		t.removed = true
 		close(t.input)
@@ -517,8 +521,9 @@ func (e *Engine) closeAllTerminals() {
 }
 
 // TerminalSubscribe 订阅终端输出：先返回从 since 起缓冲里还有的部分（start 是它的起始偏移），之后的输出从 ch 推送。
+// full 为 true 时内存缓冲之前的部分从磁盘补（完整回放）；否则只回放内存里的最后 termBacklog 字节。
 // ch 被关闭表示终端已关闭，或者订阅者跟不上被断开（这时终端还在，重新订阅即可）。
-func (e *Engine) TerminalSubscribe(id string, since int64) (backlog []byte, start int64, info model.Terminal, ch chan TermChunk, cancel func(), err error) {
+func (e *Engine) TerminalSubscribe(id string, since int64, full bool) (backlog []byte, start int64, info model.Terminal, ch chan TermChunk, cancel func(), err error) {
 	t := e.term(id)
 	if t == nil {
 		return nil, 0, info, nil, nil, ErrNotFound
@@ -529,10 +534,25 @@ func (e *Engine) TerminalSubscribe(id string, since int64) (backlog []byte, star
 		return nil, 0, info, nil, nil, ErrNotFound
 	}
 	first := t.end - int64(len(t.buf))
-	if since < first || since > t.end {
+	if since > t.end {
 		since = first
 	}
-	backlog = append([]byte(nil), t.buf[since-first:]...)
+	if since < first {
+		if d := t.log.firstOffset(); full && d >= 0 && d < first {
+			if since < d {
+				since = d
+			}
+			backlog = t.log.read(id, since, first)
+			start = since
+			since = first
+		} else {
+			since = first
+		}
+	}
+	if backlog == nil {
+		start = since
+	}
+	backlog = append(backlog, t.buf[since-first:]...)
 	info = t.info
 	info.Output = t.end
 	ch = make(chan TermChunk, termSubBuffer)
@@ -545,7 +565,66 @@ func (e *Engine) TerminalSubscribe(id string, since int64) (backlog []byte, star
 		}
 		t.mu.Unlock()
 	}
-	return backlog, since, info, ch, cancel, nil
+	return backlog, start, info, ch, cancel, nil
+}
+
+// TerminalHistory 是 terminal.history 的结果。
+type TerminalHistory struct {
+	Start int64  `json:"start"` // 这段输出的起始偏移
+	End   int64  `json:"end"`   // 这段输出的结束偏移（下次从这里接着读）
+	First int64  `json:"first"` // 最早还能读到的偏移
+	Total int64  `json:"total"` // 累计输出字节数
+	Data  string `json:"data"`
+}
+
+// TerminalHistory 按偏移读一段完整输出（磁盘 + 内存）；strip 时去掉颜色和光标控制，只留文本。
+func (e *Engine) TerminalHistory(id string, offset int64, limit int, strip bool) (*TerminalHistory, error) {
+	t := e.term(id)
+	if t == nil {
+		return nil, ErrNotFound
+	}
+	if limit <= 0 || limit > 1<<20 {
+		limit = 256 << 10
+	}
+	t.mu.Lock()
+	first := t.end - int64(len(t.buf))
+	earliest := first
+	if d := t.log.firstOffset(); d >= 0 && d < earliest {
+		earliest = d
+	}
+	if offset < earliest {
+		offset = earliest
+	}
+	if offset > t.end {
+		offset = t.end
+	}
+	to := min64(offset+int64(limit), t.end)
+	var b []byte
+	if offset < first {
+		b = t.log.read(id, offset, min64(to, first))
+	}
+	if to > first {
+		b = append(b, t.buf[max64(offset, first)-first:to-first]...)
+	}
+	total := t.end
+	t.mu.Unlock()
+	// 不在多字节字符中间截断（下次从 End 接着读）
+	if to < total {
+		for i := len(b) - 1; i >= 0 && i >= len(b)-utf8.UTFMax; i-- {
+			if utf8.RuneStart(b[i]) {
+				if !utf8.FullRune(b[i:]) {
+					to -= int64(len(b) - i)
+					b = b[:i]
+				}
+				break
+			}
+		}
+	}
+	s := string(b)
+	if strip {
+		s = stripTerminal(b)
+	}
+	return &TerminalHistory{Start: offset, End: to, First: earliest, Total: total, Data: s}, nil
 }
 
 // TerminalBusy 判断终端里是否有命令正在前台运行（不是 shell 自己在等输入），返回该命令的名字。

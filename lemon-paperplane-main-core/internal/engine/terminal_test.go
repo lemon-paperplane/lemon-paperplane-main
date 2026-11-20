@@ -51,7 +51,7 @@ func TestTerminalLifecycle(t *testing.T) {
 		t.Fatalf("终端信息不对：%+v", term)
 	}
 	// 订阅后能收到实时输出
-	_, _, _, ch, cancel, err := e.TerminalSubscribe(term.ID, 0)
+	_, _, _, ch, cancel, err := e.TerminalSubscribe(term.ID, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}

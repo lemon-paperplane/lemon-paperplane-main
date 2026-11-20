@@ -125,5 +125,6 @@
   "fs.cannotOpen": "can't open: {0}",
   "fs.noPermission": "no permission to read: {0}",
   "fs.parentMissing": "the parent folder doesn't exist: {0}",
-  "fs.exists": "a file or folder with this name already exists: {0}"
+  "fs.exists": "a file or folder with this name already exists: {0}",
+  "run.interrupted": "Interrupted when the background service exited"
 }

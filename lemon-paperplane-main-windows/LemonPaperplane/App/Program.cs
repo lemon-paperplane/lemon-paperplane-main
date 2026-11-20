@@ -22,6 +22,8 @@ public static class Program
         if (args.Length >= 2 && args[0] == "--debug-client") return DebugBridge.RunClient(args[1], args.Skip(2));
         if (args.Length >= 2 && args[0] == "--gen-icon") return IconGen.Run(args[1], args.Length >= 3 ? args[2] : null);
 
+        // 内核拉起界面时（开机自动启动、命令行、AI 的 MCP 桥）带 --background：只显示托盘图标，不开窗口
+        var background = args.Contains("--background");
         var bridge = Environment.GetEnvironmentVariable("PAPERPLANE_DEBUG_BRIDGE");
         bridge = string.IsNullOrWhiteSpace(bridge) ? null : bridge!.Trim();
 
@@ -31,8 +33,12 @@ public static class Program
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, name + "-activate");
         if (!first)
         {
-            Native.AllowSetForegroundWindow(Native.ASFW_ANY);
-            activate.Set();
+            // 已经在运行：--background（内核来确认托盘图标）时什么都不做，否则把已有的窗口叫出来
+            if (!background)
+            {
+                Native.AllowSetForegroundWindow(Native.ASFW_ANY);
+                activate.Set();
+            }
             return 0;
         }
 
@@ -65,7 +71,16 @@ public static class Program
             app.Exit += (_, _) => Tray.Shared.Dispose();
         }
         if (bridge != null) DebugBridge.Start(bridge);
-        app.Run(window);
+        if (background && !args.Contains("--gallery"))
+        {
+            // 只有托盘图标：窗口建好但不显示，从托盘或再次启动时再打开
+            app.MainWindow = window;
+            app.Run();
+        }
+        else
+        {
+            app.Run(window);
+        }
         GC.KeepAlive(mutex);
         return 0;
     }

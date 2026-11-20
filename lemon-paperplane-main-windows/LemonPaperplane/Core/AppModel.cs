@@ -739,8 +739,11 @@ public sealed class AppModel : PPObservable
     // ---------------------------------------------------------------------------
     // 退出
 
-    /// <summary>退出界面；stopServices 时同时让内核停止全部服务并退出。</summary>
-    public async void Quit(bool stopServices)
+    /// <summary>
+    /// 退出：界面和本机内核一起退出——内核在跑，托盘就一定有图标，不留用户看不见的内核。
+    /// 本机还有运行中的服务时先确认；连着远程服务器时，远程服务器上的服务不受影响（远程也不允许 system.shutdown）。
+    /// </summary>
+    public async void Quit()
     {
         // 编辑窗口有未保存的文件：先让它们提示，不退出也不停服务
         if (!EditorWindows.Shared.PrepareForQuit())
@@ -748,11 +751,28 @@ public sealed class AppModel : PPObservable
             Toasts.Show("warning", L.T("editorWindow.unsaved"));
             return;
         }
-        _events?.Stop();
-        // 只停本机的服务：远程服务器的服务不受界面退出影响（远程也不允许 system.shutdown）
-        if (stopServices && (_localApi ?? (IsRemote ? null : _api)) is { } api)
+        var local = _localApi ?? (IsRemote ? null : _api);
+        var running = 0;
+        if (local != null)
         {
-            try { await api.ShutdownAsync(true); } catch { }
+            try { running = (await local.RunsAsync(active: true)).Count; } catch { }
+        }
+        if (running > 0)
+        {
+            MainWindow.Current?.ShowMainWindow();
+            Dialogs.Confirm(L.T("quit.confirm.title"), L.T("quit.confirm.message", running), () => QuitNow(local),
+                ok: L.T("quit.confirm.ok"), danger: true);
+            return;
+        }
+        await QuitNow(local);
+    }
+
+    private async Task QuitNow(ApiClient? local)
+    {
+        _events?.Stop();
+        if (local != null)
+        {
+            try { await local.ShutdownAsync(true); } catch { }
         }
         Tray.Shared.Dispose();
         if (MainWindow.Current is { } w) w.HideOnClose = null; // 退出时真的关掉窗口

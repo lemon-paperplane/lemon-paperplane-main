@@ -167,6 +167,9 @@ func (e *Engine) StartRun(projectID, configID string) (model.Run, error) {
 	return rs.snapshot(), nil
 }
 
+// runsPerConfig：每个运行配置保留最近几次已结束的运行（连同日志）
+const runsPerConfig = 5
+
 func (e *Engine) trimRunsLocked() {
 	keep := e.Store.Settings().LogRetentionRuns
 	if keep <= 0 {
@@ -184,7 +187,7 @@ func (e *Engine) trimRunsLocked() {
 		r := rs.snapshot()
 		if !active(r.State) {
 			count[r.ConfigID]++
-			if count[r.ConfigID] > 3 || len(next) > keep*4 {
+			if count[r.ConfigID] > runsPerConfig || len(next) > keep*4 {
 				delete(e.runs, id)
 				delete(e.consoles, id)
 				_ = os.Remove(r.LogFile)
@@ -236,6 +239,7 @@ func (e *Engine) recordLastRun(r model.Run) {
 	}); err == nil {
 		e.publishProject(r.ProjectID)
 	}
+	go e.persistRuns(false)
 }
 
 func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.Plugin) {

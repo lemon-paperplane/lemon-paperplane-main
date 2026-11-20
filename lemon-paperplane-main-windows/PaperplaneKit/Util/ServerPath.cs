@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace PaperplaneKit;
 
 /// <summary>
-/// 服务器路径（docs/remote.md 5.4）：一律按服务器的分隔符（system.info 的 pathSeparator）处理，不用本机的 System.IO.Path
+/// 服务器路径（docs/remote.md 5.5）：一律按服务器的分隔符（system.info 的 pathSeparator）处理，不用本机的 System.IO.Path
 /// （Windows 连 Mac / Linux 服务器时是 /home/…，Mac 连 Windows 服务器时是 C:\…）。
 /// sep 为 "\\" 时按 Windows 规则（\ 和 / 都算分隔符、盘符、不区分大小写），否则按 POSIX 规则。
 /// </summary>

@@ -379,7 +379,8 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
-	backlog, start, info, ch, cancel, err := s.E.TerminalSubscribe(id, since)
+	// full=1：内存之前的部分从磁盘补（完整回放）
+	backlog, start, info, ch, cancel, err := s.E.TerminalSubscribe(id, since, r.URL.Query().Get("full") == "1")
 	if err != nil {
 		writeErr(w, 404, "not_found", "terminal not found")
 		return

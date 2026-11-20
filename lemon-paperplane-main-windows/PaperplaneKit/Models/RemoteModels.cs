@@ -111,6 +111,8 @@ public sealed record RemoteKeyCreated
     public RemoteKey Key { get; set; } = new();
     public string Token { get; set; } = "";
     public string Code { get; set; } = "";
+    /// <summary>连接码的二维码 SVG（手机客户端扫码添加服务器）。</summary>
+    public string QrSvg { get; set; } = "";
 }
 
 /// <summary>remote.users 的一项。</summary>

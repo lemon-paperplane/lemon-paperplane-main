@@ -28,11 +28,12 @@ input { font: inherit; color: inherit; -webkit-user-select: text; user-select: t
 .pp-app.no-sidebar { grid-template-columns: 0 0 minmax(0, 1fr); }
 .pp-app.no-sidebar .pp-sidebar { visibility: hidden; }
 .pp-app.resizing, .pp-app.resizing * { cursor: col-resize !important; }
-.pp-sidebar { min-width: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--c-bgChrome); }
-.pp-splitter { position: relative; z-index: 5; }
+.pp-sidebar { grid-column: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; background: var(--c-bgChrome); }
+.pp-splitter { grid-column: 2; position: relative; z-index: 5; }
 .pp-splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: -3px; width: 7px; cursor: col-resize; }
 .pp-app.no-sidebar .pp-splitter { display: none; }
-.pp-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* 列号写死：收起文件树时分隔条 display: none 会退出网格，不写的话主区会被自动放进宽度为 0 的第 2 列 */
+.pp-main { grid-column: 3; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 /* 内容岛：bgContent、圆角 8、1px 描边，右、下露出 6px bgChrome */
 .pp-island {
   flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column;

@@ -493,6 +493,15 @@ func (r *Registry) registerAll() {
 			text, err := e.TerminalRead(in.ID, in.MaxBytes)
 			return map[string]any{"text": text}, err
 		})
+	def(r, "terminal.history", "Terminal history", "Page through the complete output of a terminal (older output is kept on disk, not just the last 1 MB). offset is a byte offset (start from first, then pass back end); strip removes colors and cursor movement.", "r",
+		func(ctx context.Context, in *struct {
+			ID     string `json:"id" required:"true"`
+			Offset int64  `json:"offset"`
+			Limit  int    `json:"limit" desc:"bytes per page (default 256 KB, max 1 MB)"`
+			Strip  bool   `json:"strip"`
+		}) (any, error) {
+			return e.TerminalHistory(in.ID, in.Offset, in.Limit, in.Strip)
+		})
 	def(r, "terminal.resize", "Resize terminal", "Set the terminal size in columns and rows.", "i",
 		func(ctx context.Context, in *struct {
 			ID   string `json:"id" required:"true"`
@@ -548,15 +557,20 @@ func (r *Registry) registerAll() {
 			}
 			return run, nil
 		})
-	def(r, "run.logs", "Read logs", "Read console output of a run or task (consoleId = runId or taskId). ANSI colors are stripped unless raw=true. Use grep to filter (regular expression, case-insensitive).", "r",
+	def(r, "run.logs", "Read logs", "Read console output of a run or task (consoleId = runId or taskId). ANSI colors are stripped unless raw=true. Use grep to filter (regular expression, case-insensitive). With from (a seq, 1 = first line) it pages through the complete log, including lines older than the in-memory buffer (read from the log file); firstSeq/lastSeq tell what is available.", "r",
 		func(ctx context.Context, in *struct {
 			ConsoleID string `json:"consoleId" required:"true"`
 			Tail      int    `json:"tail" desc:"Last N lines (default 200, max 5000)."`
 			Since     int64  `json:"since" desc:"Only lines with seq greater than this."`
+			From      int64  `json:"from" desc:"Page through the complete log starting at this seq (1 = first line); limit lines per page."`
+			Limit     int    `json:"limit" desc:"Lines per page with from (default 500, max 5000)."`
 			Grep      string `json:"grep"`
 			Stream    string `json:"stream" enum:"stdout|stderr|system"`
 			Raw       bool   `json:"raw"`
 		}) (any, error) {
+			if in.From > 0 {
+				return readLogRange(e, in.ConsoleID, in.From, in.Limit, in.Raw)
+			}
 			return readLogs(e, in.ConsoleID, in.Tail, in.Since, in.Grep, in.Stream, in.Raw)
 		})
 	def(r, "run.stats", "Resource usage", "CPU and memory of a run's whole process tree: the last 5 minutes sampled every 2 s, peak memory, uptime, listening ports, and each process in the tree.", "r",
@@ -867,8 +881,33 @@ func waitRun(ctx context.Context, e *engine.Engine, id string, secs int) model.R
 type LogsResult struct {
 	Lines     []model.LogLine `json:"lines"`
 	LastSeq   int64           `json:"lastSeq"`
+	FirstSeq  int64           `json:"firstSeq"` // 最早能读到的一行（有日志文件时是 1）
 	Total     int             `json:"total"`
 	Truncated bool            `json:"truncated"`
+}
+
+// readLogRange：从第 from 条起分页读完整日志（内存之外的从日志文件读）。
+func readLogRange(e *engine.Engine, id string, from int64, limit int, raw bool) (*LogsResult, error) {
+	c := e.Console(id)
+	if c == nil {
+		return nil, engine.ErrNotFound
+	}
+	if limit <= 0 {
+		limit = 500
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+	lines := c.Range(from, limit)
+	if !raw {
+		for i := range lines {
+			lines[i].Text = console.StripANSI(lines[i].Text)
+		}
+	}
+	if lines == nil {
+		lines = []model.LogLine{}
+	}
+	return &LogsResult{Lines: lines, LastSeq: c.LastSeq(), FirstSeq: c.FirstSeq(), Total: len(lines)}, nil
 }
 
 func readLogs(e *engine.Engine, id string, tail int, since int64, grep, stream string, raw bool) (*LogsResult, error) {

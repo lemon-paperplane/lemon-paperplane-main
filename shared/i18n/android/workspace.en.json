@@ -1,0 +1,22 @@
+{
+  "mobile.console.copiedTail": "Log too long, copied the last {0} lines",
+  "mobile.console.copyLoaded": "Copy Loaded Log",
+  "mobile.console.empty": "No output yet",
+  "mobile.console.inputPlaceholder": "Send to the process",
+  "mobile.console.jumpToEnd": "Jump to Latest",
+  "mobile.console.jumpToStart": "Jump to Beginning",
+  "mobile.console.select": "Select Lines",
+  "mobile.console.selectAll": "Select All",
+  "mobile.console.selected": "{0} lines selected",
+  "mobile.console.start": "Beginning of log",
+  "mobile.console.unavailable": "This console's log is no longer on the server",
+  "mobile.launch.add": "Add Launch Item",
+  "mobile.links.copy": "Copy Address",
+  "mobile.links.openExternal": "Open in System Browser",
+  "mobile.links.openInApp": "Open",
+  "mobile.picker.chooseThis": "Choose This Folder",
+  "mobile.picker.drive": "Drive",
+  "mobile.picker.goTo": "Go to Path",
+  "mobile.picker.open": "Open",
+  "mobile.running.stopAll.title": "Stop all {0} running services?"
+}

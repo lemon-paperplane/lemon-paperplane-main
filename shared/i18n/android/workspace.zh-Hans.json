@@ -1,0 +1,22 @@
+{
+  "mobile.console.copiedTail": "日志太长，已复制最后 {0} 行",
+  "mobile.console.copyLoaded": "复制已加载的日志",
+  "mobile.console.empty": "还没有输出",
+  "mobile.console.inputPlaceholder": "输入发送给进程",
+  "mobile.console.jumpToEnd": "回到最新",
+  "mobile.console.jumpToStart": "跳到日志开头",
+  "mobile.console.select": "选择行",
+  "mobile.console.selectAll": "全选",
+  "mobile.console.selected": "已选 {0} 行",
+  "mobile.console.start": "日志开头",
+  "mobile.console.unavailable": "这个控制台的日志已经不在服务器上了",
+  "mobile.launch.add": "添加启动项",
+  "mobile.links.copy": "复制地址",
+  "mobile.links.openExternal": "用系统浏览器打开",
+  "mobile.links.openInApp": "打开",
+  "mobile.picker.chooseThis": "选择这个文件夹",
+  "mobile.picker.drive": "磁盘",
+  "mobile.picker.goTo": "前往路径",
+  "mobile.picker.open": "打开",
+  "mobile.running.stopAll.title": "停止全部 {0} 个运行中的服务？"
+}

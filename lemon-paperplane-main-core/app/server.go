@@ -222,10 +222,17 @@ func (s *serverClient) keyCmd(args []string) error {
 		}
 		st, _ := s.status()
 		fmt.Printf("Access key %s created for %q.\n\n", ck.Key.ID, ck.Key.Name)
-		fmt.Println("Connection code (paste it into Add Server on the other device; shown only once, treat it like a password):")
+		fmt.Println("Connection code (paste it into Add Server on the other device, or scan the QR code with the phone app;")
+		fmt.Println("shown only once, treat it like a password):")
 		fmt.Println()
 		fmt.Println(ck.Code)
 		fmt.Println()
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			if q, err := remote.QRTerminal(ck.Code); err == nil {
+				fmt.Print(q)
+				fmt.Println()
+			}
+		}
 		fmt.Println("Certificate fingerprint:", st.FingerprintDisplay)
 		if !st.Enabled {
 			fmt.Println("\nRemote access is off. Turn it on with: paperplane server enable   (or run: paperplane serve)")

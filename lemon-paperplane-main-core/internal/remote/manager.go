@@ -391,6 +391,7 @@ type CreatedKey struct {
 	Key   KeyInfo `json:"key"`
 	Token string  `json:"token"`
 	Code  string  `json:"code"`
+	QRSVG string  `json:"qrSvg"` // 连接码的二维码（手机扫码添加服务器）
 }
 
 // CreateKey 生成访问密钥。address 是额外的连接地址（外网域名等）。
@@ -423,7 +424,8 @@ func (m *Manager) CreateKey(name, address string, who AuditEntry) (*CreatedKey, 
 		}
 	}
 	code := EncodeCode(CodePayload{URLs: urls, Fingerprint: st.Fingerprint, Token: tok, Name: m.hostname})
-	return &CreatedKey{Key: KeyInfo{ID: k.ID, Name: k.Name, Kind: k.Kind, CreatedAt: k.CreatedAt}, Token: tok, Code: code}, nil
+	svg, _ := QRSVG(code)
+	return &CreatedKey{Key: KeyInfo{ID: k.ID, Name: k.Name, Kind: k.Kind, CreatedAt: k.CreatedAt}, Token: tok, Code: code, QRSVG: svg}, nil
 }
 
 func (m *Manager) newKeyLocked(name, kind, user string) (*Key, string) {

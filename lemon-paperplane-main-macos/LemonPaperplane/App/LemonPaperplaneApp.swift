@@ -49,11 +49,9 @@ struct AppCommands: Commands {
             Button(tr("menu.stopAll")) { Actions.stopAll() }
         }
         CommandGroup(replacing: .appTermination) {
-            Button(tr("menu.quitUI")) { AppModel.shared.quit(stopServices: false) }
+            // 退出 = 界面和本机内核一起退出（只停本机的服务；连着远程服务器时文案写明「本机」）
+            Button(servers.isRemote ? tr("menu.quitAll.local") : tr("menu.quitAll")) { AppModel.shared.quit() }
                 .keyboardShortcut("q", modifiers: .command)
-            // 只停本机的服务；连着远程服务器时文案写明「本机」
-            Button(servers.isRemote ? tr("menu.quitAll.local") : tr("menu.quitAll")) { AppModel.shared.quit(stopServices: true) }
-                .keyboardShortcut("q", modifiers: [.command, .option])
         }
     }
 }

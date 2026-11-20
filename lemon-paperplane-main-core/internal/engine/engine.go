@@ -75,6 +75,7 @@ type Engine struct {
 	tasks     map[string]*taskState
 	taskOrder []string
 	consoles  map[string]*console.Console
+	persistMu sync.Mutex                          // 运行记录落盘（runhistory.go）
 	execs     map[string]map[*execHandle]struct{} // consoleID → 进行中的 host/exec
 	prompts   map[string]*promptState
 	vcsBrief  map[string]*model.VCSBrief
@@ -134,6 +135,8 @@ func New(cfg Config) (*Engine, error) {
 		return p != nil && p.Manifest.Category == "framework"
 	}
 	e.killOrphans()
+	e.loadRuns()
+	e.cleanTerminalLogs()
 	e.writeAskpass()
 	go e.statsLoop()
 	go e.vcsLoop()
@@ -180,6 +183,8 @@ func (e *Engine) Close(stopRuns bool) {
 	e.closeAllTerminals()
 	e.Plugins.Shutdown()
 	e.saveActivePIDs()
+	// 还在运行的记成「被中断」：下次启动时它们会被清理掉，日志仍可查看
+	e.persistRuns(true)
 }
 
 // ---------------------------------------------------------------------------
