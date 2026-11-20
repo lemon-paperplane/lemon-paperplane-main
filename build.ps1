@@ -122,7 +122,12 @@ function Fetch-Json($url) {
     try { return (Get-Content -Raw -Encoding UTF8 $tmp | ConvertFrom-Json) } finally { Remove-Item $tmp -ErrorAction SilentlyContinue }
 }
 
-function Sha256($p) { (Get-FileHash -Algorithm SHA256 $p).Hash.ToLowerInvariant() }
+# 不依赖 Get-FileHash（从 PowerShell 7 里调用 5.1 时模块路径错乱会找不到它）
+function Sha256($p) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $fs = [System.IO.File]::OpenRead((Resolve-Path -LiteralPath $p).ProviderPath)
+    try { ([System.BitConverter]::ToString($sha.ComputeHash($fs)) -replace '-', '').ToLowerInvariant() } finally { $fs.Dispose(); $sha.Dispose() }
+}
 
 # 从候选地址里挑下载最快的：并行各下 512 KB，返回最快的下标
 function Pick-Fastest($probe, [string[]]$bases) {

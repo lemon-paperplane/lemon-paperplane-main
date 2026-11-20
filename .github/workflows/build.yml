@@ -24,6 +24,8 @@ permissions:
   contents: write
 
 env:
+  LANG: en_US.UTF-8
+  LC_ALL: en_US.UTF-8
   # 指定下载源，脚本不再测速挑镜像（云端在海外）
   GOPROXY: https://proxy.golang.org,direct
   NPM_REGISTRY: https://registry.npmjs.org
@@ -140,11 +142,10 @@ jobs:
         with:
           node-version: 22
       - name: 构建安装包与 zip
-        shell: pwsh
+        # 用 cmd 调（和用户双击 / 在命令提示符里运行一样）
+        shell: cmd
         run: |
-          $v = "${{ needs.version.outputs.version }}"
-          if ($v) { .\build.cmd -Version $v } else { .\build.cmd }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if "${{ needs.version.outputs.version }}"=="" (call build.cmd) else (call build.cmd -Version ${{ needs.version.outputs.version }})
       - uses: actions/upload-artifact@v4
         with:
           name: windows

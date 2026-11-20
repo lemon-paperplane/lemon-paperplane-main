@@ -152,7 +152,7 @@ ensure_go() {
   export PATH GOTOOLCHAIN=local
   if command -v go >/dev/null 2>&1; then
     local v; v="$(go env GOVERSION 2>/dev/null | sed 's/^go//')"
-    if [ -n "$v" ] && ver_ge "$v" "$need"; then info "go $v（$(command -v go)）"; return; fi
+    if [ -n "$v" ] && ver_ge "$v" "$need"; then info "go ${v}（$(command -v go)）"; return; fi
     info "已有 go ${v:-?}，低于要求的 $need"
   fi
   local meta="$CACHE/go-versions.json"
@@ -168,7 +168,7 @@ PY
 )
   local mirrors=("https://dl.google.com/go/" "https://mirrors.nju.edu.cn/golang/" "https://mirrors.ustc.edu.cn/golang/" "https://mirrors.aliyun.com/golang/")
   local best; best="$(fastest "$file" "${mirrors[@]}")"
-  info "下载 $ver（${mirrors[$best]}）"
+  info "下载 ${ver}（${mirrors[$best]}）"
   local tgz="$CACHE/$file"
   [ -f "$tgz" ] && [ "$(shasum -a 256 "$tgz" | awk '{print $1}')" = "$sha" ] || {
     rm -f "$tgz"
@@ -207,7 +207,7 @@ ensure_node() {
   export PATH
   if command -v node >/dev/null 2>&1; then
     local v; v="$(node --version 2>/dev/null | sed 's/^v//')"
-    if [ -n "$v" ] && ver_ge "$v" 18; then info "node $v（$(command -v node)）"; return; fi
+    if [ -n "$v" ] && ver_ge "$v" 18; then info "node ${v}（$(command -v node)）"; return; fi
     info "已有 node ${v:-?}，低于要求的 18"
   fi
   local mirrors=("https://nodejs.org/dist/" "https://registry.npmmirror.com/-/binary/node/")
@@ -217,7 +217,7 @@ ensure_node() {
   local ver; ver="$(/usr/bin/python3 -c 'import json,sys;print(next(r["version"] for r in json.load(open(sys.argv[1])) if r.get("lts")))' "$meta")"
   local arch=arm64; [ "$HOST_ARCH" = amd64 ] && arch=x64
   local name="node-$ver-darwin-$arch" sums="$CACHE/node-$ver-SHASUMS256.txt"
-  info "下载 $ver（$base）"
+  info "下载 ${ver}（${base}）"
   fetch "$base$ver/SHASUMS256.txt" "$sums" || die "下载 Node.js 校验文件失败"
   local sha; sha="$(awk -v f="$name.tar.gz" '$2==f{print $1}' "$sums")"
   fetch "$base$ver/$name.tar.gz" "$CACHE/$name.tar.gz" || die "下载 Node.js 失败"
@@ -302,7 +302,7 @@ EOF
     xcrun swift build -c release --package-path "$spm" --scratch-path "$scratch" --arch "$arch" \
       --product LemonPaperplane 2>&1 | grep -Ev '^\[[0-9]+/[0-9]+\]|^Building for|^Compiling|^Write |^Planning|^Fetching|^Computing|^Creating working copy|^Working copy' || true
     local bin; bin="$(xcrun swift build -c release --package-path "$spm" --scratch-path "$scratch" --arch "$arch" --show-bin-path)/LemonPaperplane"
-    [ -x "$bin" ] || die "界面编译失败（$arch）"
+    [ -x "$bin" ] || die "界面编译失败（${arch}）"
     lipo -info "$bin" | grep -q "$arch" || die "界面编译产物不是 $arch"
     cp "$bin" "$WORK/LemonPaperplane-$arch"
     bins+=("$WORK/LemonPaperplane-$arch")
@@ -415,7 +415,7 @@ PY
     codesign --force --timestamp -s "$SIGN_IDENTITY" "$DMG"
   fi
   if [ -n "${NOTARY_PROFILE:-}" ]; then
-    say "公证（$NOTARY_PROFILE）"
+    say "公证（${NOTARY_PROFILE}）"
     xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait || die "公证失败"
     xcrun stapler staple "$DMG" || die "装订公证票据失败"
   fi
@@ -468,7 +468,7 @@ cleanup() {
 
 # ---------------------------------------------------------------- 主流程
 if [ "$HEADLESS" = 1 ]; then
-  say "柠檬纸飞机 $VERSION · Linux 无头版构建（工具缓存：$CACHE）"
+  say "柠檬纸飞机 $VERSION · Linux 无头版构建（工具缓存：${CACHE}）"
   ensure_go
   ensure_goproxy
   say "准备插件源码"
@@ -481,7 +481,7 @@ if [ "$HEADLESS" = 1 ]; then
   exit 0
 fi
 
-say "柠檬纸飞机 $VERSION · macOS 构建（工具缓存：$CACHE）"
+say "柠檬纸飞机 $VERSION · macOS 构建（工具缓存：${CACHE}）"
 ensure_clt
 ensure_go
 ensure_goproxy
