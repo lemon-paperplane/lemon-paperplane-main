@@ -315,20 +315,61 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	send := func(lines []model.LogLine) {
-		for len(lines) > 0 {
-			n := len(lines)
-			if n > 500 {
-				n = 500
+	// 每批：定型行 lines + 实时尾部 live（伪终端里原地刷新的末尾几行，变了才带，带了就整体替换）。
+	// 实时尾部与「此刻最新行号」在控制台的同一把锁下取得，这批只发不超过这个行号的定型行，
+	// 更新的留到下一批（下一批会带上对应的新实时尾部），界面上同一行不会既是定型行又在实时尾部里。
+	pending := backlog
+	lastVer := int64(-1)
+	sendBatch := func(final bool) {
+		live, ver, upTo := c.Live()
+	drain:
+		for {
+			select {
+			case l := <-ch:
+				pending = append(pending, l)
+			default:
+				break drain
 			}
-			b, _ := json.Marshal(map[string]any{"lines": lines[:n]})
+		}
+		now := pending
+		if !final {
+			n := 0
+			for n < len(pending) && pending[n].Seq <= upTo {
+				n++
+			}
+			now = pending[:n]
+			pending = append([]model.LogLine(nil), pending[n:]...)
+		} else {
+			pending = nil
+		}
+		withLive := ver != lastVer
+		if len(now) == 0 && !withLive {
+			return
+		}
+		for {
+			n := min(len(now), 500)
+			chunk := now[:n]
+			if chunk == nil {
+				chunk = []model.LogLine{} // 只有实时尾部的批次也发 "lines": []，老界面按数组解码
+			}
+			batch := map[string]any{"lines": chunk}
+			if n == len(now) && withLive {
+				if live == nil {
+					live = []model.LogLine{}
+				}
+				batch["live"] = live
+				lastVer = ver
+			}
+			b, _ := json.Marshal(batch)
 			fmt.Fprintf(w, "data: %s\n\n", b)
-			lines = lines[n:]
+			now = now[n:]
+			if len(now) == 0 {
+				break
+			}
 		}
 		f.Flush()
 	}
-	send(backlog)
-	var pending []model.LogLine
+	sendBatch(false)
 	flush := time.NewTicker(100 * time.Millisecond)
 	defer flush.Stop()
 	ping := time.NewTicker(15 * time.Second)
@@ -340,27 +381,12 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 		case l := <-ch:
 			pending = append(pending, l)
 		case <-flush.C:
-			if len(pending) > 0 {
-				send(pending)
-				pending = nil
-			}
+			sendBatch(false)
 		case <-ping.C:
 			fmt.Fprint(w, ": ping\n\n")
 			f.Flush()
 		case <-done:
-			// 排空剩余
-		drain:
-			for {
-				select {
-				case l := <-ch:
-					pending = append(pending, l)
-				default:
-					break drain
-				}
-			}
-			if len(pending) > 0 {
-				send(pending)
-			}
+			sendBatch(true)
 			fmt.Fprint(w, "event: end\ndata: {}\n\n")
 			f.Flush()
 			return

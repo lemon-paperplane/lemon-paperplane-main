@@ -5,6 +5,10 @@ import SwiftUI
 
 // 控制台：NSTextView 实现，ANSI 着色、批量追加、只保留最近若干行（完整日志在磁盘）、搜索高亮、跟随滚动。
 // 只有可见时才订阅日志流。
+//
+// 文本分两段：前面是已定型的行（有 seq，只追加，超过上限从头部删）；末尾是实时尾部（内核终端模拟里
+// 还在被程序原地改写的屏幕末尾若干行，如 docker push / gradle / buildkit 的进度条），每次整体替换。
+// 实时尾部只占 textStorage 末尾 liveLength 个字符，不计入 maxLines / lineCount，也不进 buffer。
 
 @MainActor
 final class ConsoleController: ObservableObject {
@@ -31,7 +35,13 @@ final class ConsoleController: ObservableObject {
     private var lineLengths: [Int] = []
     private var lineHead = 0
     private var pending: [LogLine] = []
+    /// 合并批里最后一次收到的实时尾部（nil = 这一批里没有变化）
+    private var pendingLive: [LogLine]?
     private var flushScheduled = false
+    /// 当前实时尾部（换主题时重绘）及它在 textStorage 末尾占的字符数
+    private var liveLines: [LogLine] = []
+    private var liveLength = 0
+    private var searchScheduled = false
     private var matches: [NSRange] = []
     private var searchWork: DispatchWorkItem?
     private var programmaticScroll = false
@@ -98,7 +108,7 @@ final class ConsoleController: ObservableObject {
     // MARK: 主题
 
     func apply(theme t: Theme) {
-        let changed = t.isDark != theme.isDark || buffer.isEmpty
+        let changed = t.isDark != theme.isDark
         theme = t
         scrollView.backgroundColor = t.ns(.consoleBg)
         textView.backgroundColor = t.ns(.consoleBg)
@@ -106,17 +116,20 @@ final class ConsoleController: ObservableObject {
         textView.selectedTextAttributes = [.backgroundColor: t.ns(.consoleSelection)]
         textView.linkTextAttributes = [.foregroundColor: t.ns(.textLink), .underlineStyle: NSUnderlineStyle.single.rawValue,
                                        .cursor: NSCursor.pointingHand]
-        if changed && !buffer.isEmpty { rerender() }
+        if changed && (!buffer.isEmpty || !liveLines.isEmpty) { rerender() }
     }
 
     private func rerender() {
         let lines = buffer
+        let live = liveLines
         buffer.removeAll()
         lineLengths.removeAll()
         lineHead = 0
+        liveLines.removeAll()
+        liveLength = 0
         parser.reset()
         textView.textStorage?.setAttributedString(NSAttributedString())
-        append(lines)
+        update(lines, live: live.isEmpty ? nil : live)
     }
 
     // MARK: 订阅
@@ -136,7 +149,7 @@ final class ConsoleController: ObservableObject {
             var since: Int64 = 0
             if let res = try? await api.logs(consoleId: id, tail: 2000) {
                 guard gen == self.generation else { return }
-                self.append(res.lines)
+                self.update(res.lines, live: nil)
                 since = res.lastSeq
             }
             guard gen == self.generation else { return }
@@ -146,8 +159,11 @@ final class ConsoleController: ObservableObject {
                 Task { @MainActor in
                     guard let self, self.generation == gen else { return }
                     switch update {
-                    case .lines(let l): self.enqueue(l)
-                    case .ended: self.ended = true
+                    case .lines(let l, let live): self.enqueue(l, live: live)
+                    case .ended:
+                        self.ended = true
+                        // 结束时清空实时尾部（排在已收到、还没刷出的更新后面）
+                        self.enqueue([], live: [])
                     case .disconnected: break
                     }
                 }
@@ -167,6 +183,9 @@ final class ConsoleController: ObservableObject {
         lineLengths.removeAll()
         lineHead = 0
         pending.removeAll()
+        pendingLive = nil
+        liveLines.removeAll()
+        liveLength = 0
         parser.reset()
         matches.removeAll()
         matchCount = 0
@@ -178,54 +197,91 @@ final class ConsoleController: ObservableObject {
 
     // MARK: 追加
 
-    private func enqueue(_ lines: [LogLine]) {
+    /// 50ms 合并一批：已定型的行依次累积，实时尾部以最后一次为准
+    /// （实时尾部总在所有已定型行之后、每次整体替换，所以这样合并与逐条应用结果相同）
+    private func enqueue(_ lines: [LogLine], live: [LogLine]?) {
         pending.append(contentsOf: lines)
+        if let live { pendingLive = live }
         guard !flushScheduled else { return }
         flushScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self else { return }
             self.flushScheduled = false
             let batch = self.pending
+            let live = self.pendingLive
             self.pending.removeAll()
-            self.append(batch)
+            self.pendingLive = nil
+            self.update(batch, live: live)
         }
     }
 
-    func append(_ lines: [LogLine]) {
-        guard !lines.isEmpty, let storage = textView.textStorage else { return }
+    /// 一次更新：先把已定型的行插到实时尾部前面（超过上限时从头部删行），再整体替换实时尾部。
+    /// live 为 nil 表示实时尾部不变，[] 表示清空
+    func update(_ lines: [LogLine], live: [LogLine]?) {
+        guard let storage = textView.textStorage else { return }
+        // 内容没变的实时尾部不重绘（进度条没走时内核也可能照常推送）
+        let newLive = live.flatMap { sameAsLive($0) ? nil : $0 }
+        guard !lines.isEmpty || newLive != nil else { return }
+        storage.beginEditing()
+        if !lines.isEmpty { appendSettled(lines, to: storage) }
+        if let newLive { replaceLive(newLive, in: storage) }
+        storage.endEditing()
+        lineCount = lineLengths.count - lineHead
+        if !query.isEmpty {
+            // 已定型部分变了（头部删行会让位置整体平移）就重算全部匹配；只有实时尾部变了只重算尾部
+            if lines.isEmpty { refreshLiveMatches() } else { scheduleSearch(restart: false) }
+        }
+        if follow { scrollToEnd() }
+    }
+
+    private func appendSettled(_ lines: [LogLine], to storage: NSTextStorage) {
         // 只渲染会留下来的最后 maxLines 行
         let slice = lines.count > maxLines ? Array(lines.suffix(maxLines)) : lines
         let out = NSMutableAttributedString()
         for l in slice {
             let start = out.length
-            render(l, into: out)
+            render(l, parser: &parser, into: out)
             out.append(NSAttributedString(string: "\n"))
             lineLengths.append(out.length - start)
         }
         buffer.append(contentsOf: slice)
-        storage.beginEditing()
-        storage.append(out)
-        // 超过上限时一次删掉多出的行（多删 10% 减少删除次数）
+        // 插在实时尾部前面
+        storage.insert(out, at: storage.length - liveLength)
+        // 超过上限时一次删掉多出的行（多删 10% 减少删除次数）；只删已定型部分，不碰末尾的实时尾部
         let alive = lineLengths.count - lineHead
         if alive > maxLines {
             let drop = alive - maxLines + maxLines / 10
             var chars = 0
             for i in lineHead..<(lineHead + drop) { chars += lineLengths[i] }
             lineHead += drop
-            storage.deleteCharacters(in: NSRange(location: 0, length: min(chars, storage.length)))
+            storage.deleteCharacters(in: NSRange(location: 0, length: min(chars, storage.length - liveLength)))
             buffer.removeFirst(min(drop, buffer.count))
             if lineHead > 20000 {
                 lineLengths.removeFirst(lineHead)
                 lineHead = 0
             }
         }
-        storage.endEditing()
-        lineCount = lineLengths.count - lineHead
-        if !query.isEmpty { scheduleSearch() }
-        if follow { scrollToEnd() }
     }
 
-    private func render(_ line: LogLine, into out: NSMutableAttributedString) {
+    /// 整体替换末尾的实时尾部（最多几十行，只动这一段字符，不重绘整篇）
+    private func replaceLive(_ live: [LogLine], in storage: NSTextStorage) {
+        let out = NSMutableAttributedString()
+        for l in live {
+            // 每行实时行的样式都是自包含的：用全新的解析器，不改动已定型行那个有状态的解析器
+            var p = ANSIParser()
+            render(l, parser: &p, into: out)
+            out.append(NSAttributedString(string: "\n"))
+        }
+        storage.replaceCharacters(in: NSRange(location: storage.length - liveLength, length: liveLength), with: out)
+        liveLength = out.length
+        liveLines = live
+    }
+
+    private func sameAsLive(_ live: [LogLine]) -> Bool {
+        live.count == liveLines.count && zip(live, liveLines).allSatisfy { $0.text == $1.text && $0.s == $1.s }
+    }
+
+    private func render(_ line: LogLine, parser: inout ANSIParser, into out: NSMutableAttributedString) {
         let base: NSColor
         switch line.s {
         case "stderr": base = theme.ns(.consoleStderr)
@@ -339,11 +395,51 @@ final class ConsoleController: ObservableObject {
 
     // MARK: 搜索
 
-    private func scheduleSearch() {
+    /// restart：输入变化时防抖（重新计时）；内容变化时传 false 改为节流（已排上的不再推迟，
+    /// 否则持续输出时每次都被往后推，搜索结果一直刷不出来）
+    private func scheduleSearch(restart: Bool = true) {
+        if !restart && searchScheduled { return }
         searchWork?.cancel()
-        let w = DispatchWorkItem { [weak self] in Task { @MainActor in self?.runSearch(keepIndex: true) } }
+        searchScheduled = true
+        let w = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.searchScheduled = false
+                self.runSearch(keepIndex: true)
+            }
+        }
         searchWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: w)
+    }
+
+    /// 只有实时尾部变了：已定型部分的匹配和高亮不动，只重算尾部里的（尾部最多几十行，代价很小）
+    private func refreshLiveMatches() {
+        // 已排上整体重算时交给它
+        guard !searchScheduled, let lm = textView.layoutManager, let storage = textView.textStorage else { return }
+        let liveStart = storage.length - liveLength
+        matches.removeAll { NSMaxRange($0) > liveStart }
+        let firstLive = matches.count
+        let liveRange = NSRange(location: liveStart, length: liveLength)
+        lm.removeTemporaryAttribute(.backgroundColor, forCharacterRange: liveRange)
+        let s = storage.mutableString
+        var r = liveRange
+        while r.length > 0, matches.count < 5000 {
+            let f = s.range(of: query, options: [.caseInsensitive], range: r)
+            if f.location == NSNotFound { break }
+            matches.append(f)
+            let next = f.location + max(f.length, 1)
+            r = NSRange(location: next, length: s.length - next)
+        }
+        matchCount = matches.count
+        if matchIndex >= matches.count { matchIndex = max(0, matches.count - 1) }
+        for i in firstLive..<matches.count {
+            lm.addTemporaryAttribute(.backgroundColor, value: i == matchIndex ? theme.ns(.searchMatchCurrent) : theme.ns(.searchMatch),
+                                     forCharacterRange: matches[i])
+        }
+        // 当前项原来在尾部、现在落回已定型部分时补上当前色
+        if matchIndex < firstLive, matches.indices.contains(matchIndex) {
+            lm.addTemporaryAttribute(.backgroundColor, value: theme.ns(.searchMatchCurrent), forCharacterRange: matches[matchIndex])
+        }
     }
 
     private func runSearch(keepIndex: Bool) {
@@ -387,6 +483,7 @@ final class ConsoleController: ObservableObject {
 
     // MARK: 其他
 
+    /// 没有选中内容时复制看到的全部内容（包括末尾的实时尾部）
     func copyAll() {
         let sel = textView.selectedRange()
         let text = sel.length > 0 ? (textView.string as NSString).substring(with: sel) : textView.string

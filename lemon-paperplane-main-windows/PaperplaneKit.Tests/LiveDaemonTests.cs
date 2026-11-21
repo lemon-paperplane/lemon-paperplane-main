@@ -134,18 +134,25 @@ public class LiveDaemonTests
         Console.WriteLine($"        run {run.Id} state={run.State} exit={run.ExitCode} lines={run.Lines}");
 
         var lines = new ConcurrentQueue<LogLine>();
+        var live = new ConcurrentQueue<List<LogLine>>(); // 每次给出的实时尾部（新内核才有；老内核从不发）
         using var ended = new ManualResetEventSlim();
         var s = new ConsoleStream(run.Id, since: 0);
         s.Start(api, u =>
         {
             switch (u)
             {
-                case ConsoleStream.Update.Lines l: foreach (var x in l.Value) lines.Enqueue(x); break;
+                case ConsoleStream.Update.Lines l:
+                    foreach (var x in l.Value) lines.Enqueue(x);
+                    if (l.Live != null) live.Enqueue(l.Live);
+                    break;
                 case ConsoleStream.Update.Ended: ended.Set(); break;
             }
         });
         Assert.True(ended.Wait(10000));
         s.Stop();
+        // 实时行不占 seq（不推进续传位置）
+        Assert.True(live.SelectMany(x => x).All(x => x.Seq == 0));
+        Console.WriteLine($"        live updates={live.Count} lastLive={(live.LastOrDefault()?.Count ?? -1)}");
         var texts = lines.Where(l => l.S == "stdout").Select(l => ANSIParser.Strip(l.Text)).ToList();
         Assert.True(lines.Any(l => l.S == "system")); // 内核自己的「$ 命令」「进程已退出」行
         Assert.True(texts.Any(t => t.Trim() == "line-1"));

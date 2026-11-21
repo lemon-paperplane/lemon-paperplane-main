@@ -53,6 +53,9 @@ type Console struct {
 	index   []int64
 	closed  bool
 	done    chan struct{}
+	// 实时尾部：伪终端里还在原地刷新的屏幕末尾几行（只推给界面，不落盘、没有行号），见 term.go
+	live    []model.LogLine
+	liveVer int64
 }
 
 const indexStep = 1000
@@ -146,17 +149,26 @@ func (c *Console) OnLine(fn func(model.LogLine)) {
 
 // Append 追加一行（text 不含换行）。
 func (c *Console) Append(stream, text string) {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
+	line := c.appendLocked(stream, text)
+	hooks := c.hooks
+	c.mu.Unlock()
+	for _, h := range hooks {
+		h(line)
+	}
+}
+
+func (c *Console) appendLocked(stream, text string) model.LogLine {
 	if len(text) > maxLineBytes {
 		text = text[:maxLineBytes] + "…"
 	}
 	// 一条一行：文件第 N 行必须对应第 N 条
 	if strings.ContainsRune(text, '\n') {
 		text = strings.ReplaceAll(text, "\n", " ")
-	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return
 	}
 	c.seq++
 	line := model.LogLine{Seq: c.seq, Time: time.Now().UnixMilli(), Stream: stream, Text: displayText(text)}
@@ -169,17 +181,50 @@ func (c *Console) Append(stream, text string) {
 		_ = c.fileW.WriteByte('\n')
 		c.fileOff += int64(len(text)) + 1
 	}
-	hooks := c.hooks
 	for ch := range c.subs {
 		select {
 		case ch <- line:
 		default:
 		}
 	}
-	c.mu.Unlock()
-	for _, h := range hooks {
-		h(line)
+	return line
+}
+
+// update 追加定型行并（liveChanged 时）替换实时尾部，在同一把锁下完成：
+// 推送端拿到的实时尾部与「此刻最新行号」总是对得上，界面不会把同一行既显示成定型行又显示在实时尾部里。
+func (c *Console) update(stream string, commit []string, live []string, liveChanged bool) {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
 	}
+	lines := make([]model.LogLine, 0, len(commit))
+	for _, t := range commit {
+		lines = append(lines, c.appendLocked(stream, t))
+	}
+	if liveChanged {
+		now := time.Now().UnixMilli()
+		c.live = make([]model.LogLine, len(live))
+		for i, t := range live {
+			c.live[i] = model.LogLine{Time: now, Stream: stream, Text: displayText(t)}
+		}
+		c.liveVer++
+	}
+	hooks := c.hooks
+	c.mu.Unlock()
+	for _, l := range lines {
+		for _, h := range hooks {
+			h(l)
+		}
+	}
+}
+
+// Live 返回实时尾部、它的版本号（每次变化加一）和此刻最新的定型行号。
+// 行号不超过 seq 的定型行此刻都已经推进了订阅通道。
+func (c *Console) Live() (live []model.LogLine, ver int64, seq int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]model.LogLine{}, c.live...), c.liveVer, c.seq
 }
 
 // System 追加一行系统信息。
@@ -359,6 +404,10 @@ func (c *Console) Close() {
 		return
 	}
 	c.closed = true
+	if len(c.live) > 0 {
+		c.live = nil
+		c.liveVer++
+	}
 	if c.fileW != nil {
 		_ = c.fileW.Flush()
 		_ = c.file.Close()

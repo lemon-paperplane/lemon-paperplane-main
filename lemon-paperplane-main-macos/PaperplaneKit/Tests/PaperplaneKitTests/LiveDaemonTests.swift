@@ -65,7 +65,9 @@ final class LiveDaemonTests: XCTestCase {
         let s = ConsoleStream(consoleId: run.id, since: 0)
         s.start(client: api) { u in
             switch u {
-            case .lines(let l): box.add(l.count); gotLines.fulfill()
+            case .lines(let l, _):
+                // 只有实时尾部的消息不算回放的行
+                if !l.isEmpty { box.add(l.count); gotLines.fulfill() }
             case .ended: ended.fulfill()
             case .disconnected: break
             }

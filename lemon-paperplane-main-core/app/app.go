@@ -29,7 +29,10 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/api"
+	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/console"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/engine"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/gateway"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/mcp"
@@ -50,6 +53,14 @@ func Main() {
 		return
 	}
 	if len(os.Args) < 2 {
+		// 在终端里直接运行 paperplane：逐级菜单引导
+		if menuAvailable() {
+			if err := runMenu(); err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+			return
+		}
 		usage()
 		os.Exit(2)
 	}
@@ -86,6 +97,8 @@ func Main() {
 		err = runPlugin(args)
 	case "version", "--version", "-v":
 		fmt.Println("paperplane", Version)
+	case "menu":
+		err = runMenu()
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -103,6 +116,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `Lemon Paperplane
 
 Usage:
+  paperplane                              interactive menu (when run in a terminal)
   paperplane daemon [--detach]            start the daemon
   paperplane mcp                          MCP server over stdio (for Claude Code / Claude Desktop)
   paperplane ls [workspace]               list projects
@@ -110,7 +124,7 @@ Usage:
   paperplane run <project> [config]       start and follow logs (Ctrl-C detaches, does not stop)
   paperplane stop <project|runId>         stop runs
   paperplane shutdown                     stop the running daemon and all runs (never starts one)
-  paperplane serve [--listen addr] [--data-dir dir]
+  paperplane serve [--detach] [--listen addr] [--data-dir dir]
                                           run in the foreground with remote access on (servers, systemd)
   paperplane server info                  remote access: addresses, certificate fingerprint
   paperplane server key add <name> [--address host]   create an access key, print its connection code
@@ -196,7 +210,14 @@ func runDaemonOpts(args []string, dopt daemonOpts) error {
 		_ = os.Remove(layout.RuntimeFile())
 	}
 	if *detach {
-		cmd := exec.Command(exe, "daemon")
+		args := []string{"daemon"}
+		if dopt.serve {
+			args = []string{"serve"}
+			if dopt.listen != "" {
+				args = append(args, "--listen", dopt.listen)
+			}
+		}
+		cmd := exec.Command(exe, args...)
 		logf, _ := os.OpenFile(filepath.Join(layout.Logs, "daemon.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		cmd.Stdout, cmd.Stderr = logf, logf
 		cmd.Env = append(os.Environ(), "PAPERPLANE_DETACHED=1")
@@ -783,6 +804,7 @@ func runLogs(args []string) error {
 }
 
 // follow 跟随控制台输出直到结束（Ctrl-C 只退出跟随）。
+// 输出到终端时，实时尾部（伪终端里原地刷新的进度条）画在最下面，随推送原地重画；不是终端时只打印定型行。
 func (c *client) follow(id string, tail int) error {
 	since := int64(0)
 	if tail > 0 {
@@ -808,6 +830,20 @@ func (c *client) follow(id string, tail int) error {
 		return err
 	}
 	defer resp.Body.Close()
+	tty := term.IsTerminal(int(os.Stdout.Fd()))
+	cols := 0
+	if tty {
+		cols, _, _ = term.GetSize(int(os.Stdout.Fd()))
+	}
+	var live []string
+	liveRows := 0
+	clearLive := func() {
+		if liveRows > 0 {
+			fmt.Printf("\x1b[%dA\r\x1b[J", liveRows)
+			liveRows = 0
+		}
+	}
+	defer clearLive()
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
 	for sc.Scan() {
@@ -822,11 +858,39 @@ func (c *client) follow(id string, tail int) error {
 			Lines []struct {
 				Text string `json:"text"`
 			} `json:"lines"`
+			Live *[]struct {
+				Text string `json:"text"`
+			} `json:"live"`
 		}
-		if json.Unmarshal([]byte(line[6:]), &batch) == nil {
+		if json.Unmarshal([]byte(line[6:]), &batch) != nil {
+			continue
+		}
+		if !tty {
 			for _, l := range batch.Lines {
 				fmt.Println(l.Text)
 			}
+			continue
+		}
+		if len(batch.Lines) == 0 && batch.Live == nil {
+			continue
+		}
+		clearLive()
+		for _, l := range batch.Lines {
+			fmt.Println(l.Text)
+		}
+		if batch.Live != nil {
+			live = live[:0]
+			for _, l := range *batch.Live {
+				live = append(live, l.Text)
+			}
+		}
+		for _, l := range live {
+			fmt.Println(l + "\x1b[0m")
+			rows := 1
+			if w := console.DisplayWidth(l); cols > 0 && w > cols {
+				rows = (w + cols - 1) / cols
+			}
+			liveRows += rows
 		}
 	}
 	return nil

@@ -86,6 +86,55 @@ final class SSETests: XCTestCase {
     }
 }
 
+/// 控制台流 data: 消息解码：已定型的行 + 可选的实时尾部
+final class ConsoleStreamDecodingTests: XCTestCase {
+    func testLinesAndLive() throws {
+        let b = try XCTUnwrap(ConsoleStream.decode(#"""
+        {"lines":[{"seq":7,"t":1,"s":"stdout","text":"a"},{"seq":8,"t":2,"s":"stderr","text":"b"}],
+         "live":[{"seq":0,"t":0,"s":"stdout","text":"\u001b[32m 50%\u001b[0m"}]}
+        """#))
+        XCTAssertEqual(b.lines.map(\.seq), [7, 8])
+        XCTAssertEqual(b.lines.map(\.s), ["stdout", "stderr"])
+        XCTAssertEqual(b.live?.count, 1)
+        XCTAssertEqual(b.live?.first?.seq, 0)
+        XCTAssertEqual(b.live?.first?.text, "\u{1B}[32m 50%\u{1B}[0m")
+    }
+
+    func testNoLiveKeyMeansUnchanged() throws {
+        // 老内核：只有 lines，live 必须是 nil（不变），不能当成空数组（清空）
+        let b = try XCTUnwrap(ConsoleStream.decode(#"{"lines":[{"seq":1,"t":0,"s":"stdout","text":"x"}]}"#))
+        XCTAssertEqual(b.lines.count, 1)
+        XCTAssertNil(b.live)
+    }
+
+    func testLiveOnly() throws {
+        // 只有实时尾部的消息不能被丢掉
+        let b = try XCTUnwrap(ConsoleStream.decode(##"{"live":[{"seq":0,"t":0,"s":"stdout","text":"#1 [2/5] RUN make"},{"seq":0,"s":"stdout","text":""}]}"##))
+        XCTAssertTrue(b.lines.isEmpty)
+        XCTAssertEqual(b.live?.map(\.text), ["#1 [2/5] RUN make", ""])
+    }
+
+    func testEmptyLiveClears() throws {
+        let b = try XCTUnwrap(ConsoleStream.decode(#"{"lines":null,"live":[]}"#))
+        XCTAssertTrue(b.lines.isEmpty)
+        XCTAssertEqual(b.live, [])
+        let n = try XCTUnwrap(ConsoleStream.decode(#"{"live":null}"#))
+        XCTAssertEqual(n.live, [])
+    }
+
+    func testNothingToDo() {
+        XCTAssertNil(ConsoleStream.decode(#"{"lines":[]}"#))
+        XCTAssertNil(ConsoleStream.decode("{}"))
+        XCTAssertNil(ConsoleStream.decode("not json"))
+    }
+
+    func testBadLiveDoesNotDropLines() throws {
+        let b = try XCTUnwrap(ConsoleStream.decode(#"{"lines":[{"seq":3,"t":0,"s":"stdout","text":"ok"}],"live":"oops"}"#))
+        XCTAssertEqual(b.lines.map(\.seq), [3])
+        XCTAssertEqual(b.live, [])
+    }
+}
+
 final class SVGTests: XCTestCase {
     func testAllSharedIconsParse() throws {
         let dir = repoRoot.appendingPathComponent("shared/icons")

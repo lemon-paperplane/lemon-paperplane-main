@@ -28,6 +28,7 @@ type runState struct {
 	cancel   context.CancelFunc
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
+	tty      bool // 在伪终端里运行：输入按回车键发送、由终端回显
 	console  *console.Console
 	spec     *sdk.LaunchSpec
 	stopSig  string
@@ -324,12 +325,20 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 	cmd := exec.Command(lookPath(spec.Command, envList), spec.Args...)
 	cmd.Dir = cwd
 	cmd.Env = envList
-	proc.Prepare(cmd)
-	stdout := rs.console.Writer("stdout")
-	stderr := rs.console.Writer("stderr")
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	stdin, _ := cmd.StdinPipe()
+	// 脚本 / 命令类运行在伪终端里跑：docker、gradle、npm 会画进度条、原地刷新，内核做终端模拟
+	usePTY := spec.Terminal && runPTYSupported()
+	var stdout, stderr *console.LineWriter
+	var stdin io.WriteCloser
+	if usePTY {
+		cmd.Env = withTermEnv(envList)
+	} else {
+		proc.Prepare(cmd)
+		stdout = rs.console.Writer("stdout")
+		stderr = rs.console.Writer("stderr")
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		stdin, _ = cmd.StdinPipe()
+	}
 	display := spec.Display
 	if display == "" {
 		display = displayCommand(spec.Command, spec.Args)
@@ -350,10 +359,36 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 		return
 	}
 	rs.console.System("$ " + display)
-	if err := cmd.Start(); err != nil {
+	var ptmx *os.File
+	var term *console.TermWriter
+	var readDone chan struct{}
+	if usePTY {
+		ptmx, err = startRunPTY(cmd)
+	} else {
+		err = cmd.Start()
+	}
+	if err != nil {
 		e.failRun(rs, Errf("err.startFailed", err.Error()))
 		e.diagnoseRunFailure(rs, p, m, cfg)
 		return
+	}
+	if usePTY {
+		stdin = ptmx
+		term = rs.console.Terminal(func(b []byte) { _, _ = ptmx.Write(b) })
+		readDone = make(chan struct{})
+		go func() {
+			defer close(readDone)
+			buf := make([]byte, 32*1024)
+			for {
+				n, err := ptmx.Read(buf)
+				if n > 0 {
+					_, _ = term.Write(buf[:n])
+				}
+				if err != nil {
+					return
+				}
+			}
+		}()
 	}
 	proc.Started(cmd)
 	stopSig := spec.StopSignal
@@ -365,7 +400,7 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 		wait = 8 * time.Second
 	}
 	rs.mu.Lock()
-	rs.cmd, rs.stdin, rs.spec, rs.stopSig, rs.stopWait = cmd, stdin, &spec, stopSig, wait
+	rs.cmd, rs.stdin, rs.tty, rs.spec, rs.stopSig, rs.stopWait = cmd, stdin, usePTY, &spec, stopSig, wait
 	stopped := rs.r.StoppedByUser
 	rs.mu.Unlock()
 	e.setRun(rs, func(r *model.Run) {
@@ -391,8 +426,22 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 		}
 	}()
 	err = cmd.Wait()
-	stdout.Flush()
-	stderr.Flush()
+	if usePTY {
+		// 进程退出后把剩下的输出读完；后台子进程还占着终端时最多等 500ms
+		select {
+		case <-readDone:
+		case <-time.After(500 * time.Millisecond):
+		}
+		_ = ptmx.Close()
+		select {
+		case <-readDone:
+		case <-time.After(2 * time.Second):
+		}
+		term.Close()
+	} else {
+		stdout.Flush()
+		stderr.Flush()
+	}
 	code := exitCode(err)
 	now := time.Now()
 	var final model.Run
@@ -538,10 +587,15 @@ func (e *Engine) RunInput(id, text string) error {
 		return ErrNotFound
 	}
 	rs.mu.Lock()
-	w := rs.stdin
+	w, tty := rs.stdin, rs.tty
 	rs.mu.Unlock()
 	if w == nil {
 		return Errf("err.notRunning")
+	}
+	if tty {
+		// 伪终端：像在终端里按回车一样发 \r，输入由终端自己回显（关了回显的密码输入就不显示）
+		_, err := io.WriteString(w, strings.TrimRight(text, "\r\n")+"\r")
+		return err
 	}
 	if !strings.HasSuffix(text, "\n") {
 		text += "\n"
@@ -549,6 +603,38 @@ func (e *Engine) RunInput(id, text string) error {
 	rs.console.Append("system", "> "+strings.TrimRight(text, "\n"))
 	_, err := io.WriteString(w, text)
 	return err
+}
+
+// withTermEnv：伪终端里运行时补上终端相关的环境变量（systemd、图形界面启动的内核没有 TERM，
+// 程序会当成哑终端，不画进度条）；去掉 COLUMNS / LINES，让程序按伪终端尺寸排版。
+func withTermEnv(env []string) []string {
+	out := make([]string, 0, len(env)+3)
+	has := map[string]bool{}
+	for _, kv := range env {
+		k, v, _ := strings.Cut(kv, "=")
+		switch {
+		case k == "COLUMNS" || k == "LINES":
+			continue
+		case k == "TERM" && (v == "" || v == "dumb"):
+			continue
+		}
+		has[k] = v != ""
+		out = append(out, kv)
+	}
+	if !has["TERM"] {
+		out = append(out, "TERM=xterm-256color")
+	}
+	if !has["COLORTERM"] {
+		out = append(out, "COLORTERM=truecolor")
+	}
+	if !has["LANG"] && !has["LC_ALL"] && !has["LC_CTYPE"] {
+		if strings.HasPrefix(i18n.Locale(), "zh") {
+			out = append(out, "LANG=zh_CN.UTF-8")
+		} else {
+			out = append(out, "LANG=en_US.UTF-8")
+		}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------

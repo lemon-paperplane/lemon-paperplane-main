@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Newtonsoft.Json.Linq;
 
 namespace PaperplaneKit;
 
@@ -71,20 +72,47 @@ public sealed class EventStream
 /// <summary>
 /// 控制台日志流 GET /api/v1/consoles/&lt;id&gt;/stream?since=&lt;seq&gt;（对应 Mac 的 ConsoleStream）。
 /// 断线后从最后收到的 seq 续传；收到 event: end 后结束（Ended）。
+/// <para>
+/// 每条 data 是 {"lines": [已定型的行], "live": [实时尾部]}：lines 与以前相同（有 seq，落盘，只追加）；
+/// live 是伪终端里还在被原地改写的屏幕末尾几行（seq 为 0，不推进续传位置），键存在时整体替换实时尾部
+/// （空数组或 null = 清空），键缺省时实时尾部不变。新内核每次（重）连上后的第一条一定带 live；老内核从不发。
+/// </para>
 /// </summary>
 public sealed class ConsoleStream
 {
     public abstract record Update
     {
         private Update() { }
-        public sealed record Lines(List<LogLine> Value) : Update;
+        /// <summary>
+        /// 一条消息的内容，按顺序原子地应用：先追加 Value（已定型的行，可能为空），再用 Live 整体替换实时尾部。
+        /// Live 为 null 表示这条消息没带 live 键（实时尾部不变），空列表表示清空。
+        /// </summary>
+        public sealed record Lines(List<LogLine> Value, List<LogLine>? Live = null) : Update;
         public sealed record Ended : Update;
         public sealed record Disconnected(string? Reason) : Update;
     }
 
-    private sealed record Batch
+    /// <summary>
+    /// 解码一条 data（lines 缺省或为 null 当空；live 键缺省得 null，键存在为 null 当空列表）。
+    /// 不是 JSON 对象或解析失败返回 false。
+    /// </summary>
+    private static bool TryDecode(string data, out List<LogLine> lines, out List<LogLine>? live)
     {
-        public List<LogLine> Lines { get; set; } = new();
+        lines = new List<LogLine>();
+        live = null;
+        try
+        {
+            if (Json.Parse(data) is not JObject obj) return false;
+            lines = Json.Decode<List<LogLine>>(obj["lines"]);
+            if (obj.TryGetValue("live", out var lt)) live = Json.Decode<List<LogLine>>(lt);
+        }
+        catch (Exception)
+        {
+            lines = new List<LogLine>();
+            live = null;
+            return false;
+        }
+        return true;
     }
 
     private readonly object _lock = new();
@@ -117,12 +145,11 @@ public sealed class ConsoleStream
                         break;
                     case SSEConnection.Event.Message m:
                         if (m.Value.Event == "end") return;
-                        Batch b;
-                        try { b = Json.Deserialize<Batch>(m.Value.Data); }
-                        catch (Exception) { return; }
-                        if (b.Lines.Count == 0) return;
-                        Advance(b.Lines[b.Lines.Count - 1].Seq);
-                        handler(new Update.Lines(b.Lines));
+                        if (!TryDecode(m.Value.Data, out var lines, out var live)) return;
+                        if (lines.Count == 0 && live == null) return;
+                        // 只有已定型的行推进续传位置（实时行 seq 为 0）
+                        if (lines.Count > 0) Advance(lines[lines.Count - 1].Seq);
+                        handler(new Update.Lines(lines, live));
                         break;
                 }
             },

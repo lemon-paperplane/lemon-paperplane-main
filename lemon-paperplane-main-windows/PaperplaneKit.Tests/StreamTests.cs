@@ -148,6 +148,74 @@ public class StreamTests
     }
 
     [Test]
+    public void ConsoleStreamDecodesLiveTail()
+    {
+        // 第一个连接：已定型行 + 实时尾部、只有实时尾部、只有已定型行（无 live 键）、空对象（忽略）后断开；
+        // 第二个连接：空 live（清空）、live 为 null（键存在，当清空）、结束
+        using var srv = new MiniServer((i, _) => i == 0
+            ? Sse("data: {\"lines\":[{\"seq\":1,\"t\":5,\"s\":\"stdout\",\"text\":\"a\"}],\"live\":[{\"seq\":0,\"s\":\"stdout\",\"text\":\"\\u001b[32m 50%\\u001b[0m\"},{\"seq\":0,\"s\":\"stdout\",\"text\":\"layer 2\"}]}\n\n" +
+                  "data: {\"live\":[{\"seq\":0,\"s\":\"stdout\",\"text\":\"100%\"}]}\n\n" +
+                  "data: {\"lines\":[{\"seq\":2,\"text\":\"b\"}]}\n\n" +
+                  "data: {}\n\n")
+            : Sse("data: {\"lines\":[],\"live\":[]}\n\n" +
+                  "data: {\"lines\":[{\"seq\":3,\"text\":\"c\"}],\"live\":null}\n\n" +
+                  "event: end\ndata: {}\n\n"));
+        var updates = new ConcurrentQueue<ConsoleStream.Update>();
+        var cs = new ConsoleStream("run-live", since: 0);
+        cs.Start(srv.Client, updates.Enqueue);
+        WaitFor(() => updates.Any(u => u is ConsoleStream.Update.Ended), 5000, "Ended");
+        cs.Stop();
+        var batches = updates.OfType<ConsoleStream.Update.Lines>().ToList();
+        Assert.Equal(5, batches.Count);
+        // 同一条消息：已定型行和实时尾部一起给出
+        KitAssert.Seq(new[] { "a" }, batches[0].Value.Select(l => l.Text));
+        KitAssert.Seq(new[] { "\u001b[32m 50%\u001b[0m", "layer 2" }, batches[0].Live?.Select(l => l.Text));
+        Assert.Equal(0L, batches[0].Live![0].Seq);
+        // 只有 live 的消息也要给出
+        Assert.Equal(0, batches[1].Value.Count);
+        KitAssert.Seq(new[] { "100%" }, batches[1].Live?.Select(l => l.Text));
+        // 没有 live 键：实时尾部不变（null），和老内核一样
+        KitAssert.Seq(new[] { "b" }, batches[2].Value.Select(l => l.Text));
+        Assert.Null(batches[2].Live);
+        // 空数组 = 清空（不是 null）
+        Assert.Equal(0, batches[3].Value.Count);
+        Assert.NotNull(batches[3].Live);
+        Assert.Equal(0, batches[3].Live!.Count);
+        // live 为 null：键存在，按清空处理
+        KitAssert.Seq(new[] { "c" }, batches[4].Value.Select(l => l.Text));
+        Assert.NotNull(batches[4].Live);
+        Assert.Equal(0, batches[4].Live!.Count);
+        // 实时行不推进续传位置：断线后从最后一行已定型行（seq 2）续传
+        Assert.Equal(3L, cs.LastSeq);
+        var reqs = srv.Requests.ToList();
+        Assert.True(reqs[0].StartsWith("GET /api/v1/consoles/run-live/stream?since=0 "));
+        Assert.True(reqs[1].StartsWith("GET /api/v1/consoles/run-live/stream?since=2 "));
+    }
+
+    [Test]
+    public void ConsoleStreamLiveOnlyDoesNotAdvanceSeq()
+    {
+        // 只有实时尾部的消息不推进 seq：断线重连仍从 since 起
+        using var srv = new MiniServer((i, _) => i == 0
+            ? Sse("data: {\"live\":[{\"seq\":0,\"s\":\"stdout\",\"text\":\"pushing 10%\"}]}\n\n")
+            : Sse("data: {\"live\":[]}\n\nevent: end\ndata: {}\n\n"));
+        var updates = new ConcurrentQueue<ConsoleStream.Update>();
+        var cs = new ConsoleStream("r", since: 7);
+        cs.Start(srv.Client, updates.Enqueue);
+        WaitFor(() => updates.Any(u => u is ConsoleStream.Update.Ended), 5000, "Ended");
+        cs.Stop();
+        var batches = updates.OfType<ConsoleStream.Update.Lines>().ToList();
+        Assert.Equal(2, batches.Count);
+        Assert.True(batches.All(b => b.Value.Count == 0));
+        KitAssert.Seq(new[] { "pushing 10%" }, batches[0].Live?.Select(l => l.Text));
+        Assert.Equal(0, batches[1].Live!.Count);
+        Assert.Equal(7L, cs.LastSeq);
+        var reqs = srv.Requests.ToList();
+        Assert.True(reqs[0].Contains("stream?since=7 "));
+        Assert.True(reqs[1].Contains("stream?since=7 "));
+    }
+
+    [Test]
     public void TerminalStreamDedupsOverlapAndCloses()
     {
         string Chunk(long o, string text) => $"data: {{\"o\":{o},\"d\":\"{Convert.ToBase64String(Encoding.UTF8.GetBytes(text))}\"}}\n\n";

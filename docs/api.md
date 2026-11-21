@@ -32,7 +32,8 @@ Content-Type: application/json
 
 - `GET /api/v1/events`：`text/event-stream`，每条 `data: {"type": "...", "data": ...}`。类型见 `model.go` 的 `Ev*` 常量。连上后先收到一条 `hello`（data 为 SystemInfo）。每 15 秒一条 `: ping` 注释。
 - `GET /api/v1/terminals/<terminalId>/stream?since=<字节偏移>`：交互终端的输出流。先发 `event: state`（Terminal），再补发缓冲里偏移 `since` 之后还留着的输出（每个终端保留最后 1 MB），之后实时推送。每条 `data: {"o": 起始偏移, "d": base64 原始字节}`（字节流，UTF-8 可能跨条切开，按字节写进终端模拟器）；终端退出或重新启动时发 `event: state`；终端关闭时发 `event: closed`。连接断开（跟不上会被断开）后带上已收到的末尾偏移重连即可续上。
-- `GET /api/v1/consoles/<consoleId>/stream?since=<seq>`：某个运行（consoleId = runId）或任务（taskId）的日志流。先补发 `seq > since` 的缓冲行，再实时推送。每条 `data: {"lines": [LogLine...]}`（批量，最多 100ms 合并一次）。控制台结束后发 `event: end`。
+- `GET /api/v1/consoles/<consoleId>/stream?since=<seq>`：某个运行（consoleId = runId）或任务（taskId）的日志流。先补发 `seq > since` 的缓冲行，再实时推送。每条 `data: {"lines": [LogLine...], "live": [LogLine...]}`（批量，最多 100ms 合并一次）。控制台结束后发 `event: end`。
+  - `live` 是实时尾部：在伪终端里运行（`LaunchSpec.terminal`）的程序屏幕上还在原地刷新的末尾几行（进度条、当前行），`seq` 为 0、不落盘。**带这个键时整体替换**界面上的实时尾部（空数组即清空），不带时保持不变；同一条消息先追加 `lines` 再替换 `live`，实时尾部永远显示在所有定型行之后。每次（重）连接后的第一条消息一定带 `live`。每行的 ANSI 样式自成一体（从默认样式开始，有样式的结尾带重置），渲染时不要用跨行的解析状态。实时行定型后作为普通的 `lines` 发出（程序最后一次上移光标 3 秒后、或卷出 50 行的屏幕、或进程结束时），断线续传只看定型行的 `seq`。老界面忽略 `live`，只是晚一点看到最终结果。
 
 ## 4. 图标引用
 

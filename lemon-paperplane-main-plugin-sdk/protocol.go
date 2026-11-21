@@ -348,6 +348,10 @@ type LaunchSpec struct {
 	StopSignal    string            `json:"stopSignal,omitempty"`    // SIGINT | SIGTERM（默认）| SIGKILL
 	StopTimeoutMs int               `json:"stopTimeoutMs,omitempty"`
 	Display       string            `json:"display,omitempty"` // 控制台第一行显示的命令行（可选，默认由内核拼）
+	// Terminal：在伪终端里运行（macOS / Linux；Windows 忽略，仍用管道）。程序会认为自己在终端里：
+	// docker / gradle / npm 输出进度条和颜色，内核做终端模拟，原地刷新的行作为控制台的实时尾部推给界面。
+	// 标准输出与标准错误合成一路。
+	Terminal bool `json:"terminal,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

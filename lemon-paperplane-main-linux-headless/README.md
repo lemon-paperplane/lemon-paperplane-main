@@ -33,7 +33,19 @@
 
 缺 Go 时自动准备。产物在 `dist/linux-headless/`，附 `SHA256SUMS`。只要部分架构：`go -C scripts/ppbuild run . headless -out dist/linux-headless -arch amd64,arm64`。
 
-## 快速开始
+## 菜单（推荐）
+
+在终端里直接运行 `paperplane`，不带任何参数，会进入逐级菜单：方向键选择、回车确认、Esc 返回，也可以按数字键直接选。
+
+- **服务**：在后台运行 / 在这个窗口里运行 / 停止 / 重启 / 查看日志；Linux 上还能「设为开机自动运行」（自动生成并安装 systemd 服务，过程中会要 sudo 密码）。
+- **添加设备**：输入设备名称和（可选的）外网地址，打印连接码和二维码；远程访问没开、服务没在运行时会顺便问要不要开。
+- **访问密钥 / 账号 / 远程访问设置**：查看、吊销、改密码、开关账号密码登录、改端口、看证书指纹。
+- **工程与运行**：导入文件夹、运行（实时显示输出，进度条原地刷新，Ctrl+C 回到菜单不会停止运行）、停止、看上次输出。
+- **语言 / Language**：跟随系统、简体中文或 English；服务的日志和提示也跟着变。
+
+不是在终端里运行（脚本、管道）时仍然只打印下面的命令用法。
+
+## 快速开始（命令行）
 
 ```bash
 # 1. 拷到服务器上
@@ -70,7 +82,9 @@ journalctl -u paperplane -f      # 看日志（含监听地址和证书指纹）
 ## 命令
 
 ```
-paperplane serve [--listen 0.0.0.0:47290] [--data-dir 目录]   前台运行并打开远程监听
+paperplane                                                    逐级菜单（在终端里运行时）
+paperplane serve [--detach] [--listen 0.0.0.0:47290] [--data-dir 目录]
+                                                              运行并打开远程监听（--detach 放到后台）
 paperplane server info                                        地址、证书指纹、密钥与账号数
 paperplane server key add <名称> [--address 主机[:端口]]      生成访问密钥，打印连接码
 paperplane server key list

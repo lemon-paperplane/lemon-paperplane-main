@@ -1,6 +1,8 @@
 // 控制台（对应 Mac Components/Console.swift）：自绘 + 虚拟化（只画可见行），ANSI 着色、批量追加（约 50ms 合并一次，后台解析）、
 // 只保留最近 consoleMaxLines 行（完整日志在磁盘）、搜索高亮、跟随滚动、选择复制、可点击的地址、运行中输入行。
 // 只有可见时才订阅日志流：先取最近 2000 行，再从 lastSeq 起订阅，断线自动续传（ConsoleStream）。
+// 实时尾部：伪终端里还在原地改写的末尾几行（docker push / gradle / buildkit 的进度条），整体替换、接在已定型行后面显示，
+// 不计入行数上限和行数统计，控制台结束时清空。
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -247,12 +249,26 @@ internal sealed class ConsoleFonts
 internal sealed class ConsoleTextView : FrameworkElement
 {
     // MARK: 数据
+    // 显示的行 = 已定型的行（_lines，只追加，超过上限从头裁）+ 实时尾部（_live，程序还在原地改写的末尾几行，整体替换）。
+    // 两者共用一套下标：0.._lines.Count-1 是已定型行，之后是实时行；绝对行号同理（实时行接在最后一行已定型行后面）。
     private readonly List<ConsoleLineData> _lines = new();
-    private readonly List<int> _rowStart = new(); // 每行之前的显示行数（换行时）
+    private List<ConsoleLineData> _live = new();
+    private readonly List<int> _rowStart = new(); // 每行之前的显示行数（换行时；已定型行在前、实时行在后）
     private long _firstNo;                        // _lines[0] 的绝对行号
-    private int _totalRows;
-    private int _maxWidth;
+    private int _committedRows;                   // 已定型行的显示行数
+    private int _committedMaxWidth;               // 已定型行的最大宽度
+    private int _totalRows;                       // 含实时尾部
+    private int _maxWidth;                        // 含实时尾部
     private readonly int _maxLines = Math.Max(100, M.ConsoleMaxLines);
+
+    /// <summary>显示的总行数（含实时尾部）。</summary>
+    private int ShownCount => _lines.Count + _live.Count;
+
+    /// <summary>下标 → 行（已定型行在前，实时行在后）。</summary>
+    private ConsoleLineData LineAt(int i) => i < _lines.Count ? _lines[i] : _live[i - _lines.Count];
+
+    /// <summary>实时尾部第一行的绝对行号（没有实时行时就是下一行已定型行的行号）。</summary>
+    private long LiveStartNo => _firstNo + _lines.Count;
 
     // MARK: 排版
     private bool _wrap = true;
@@ -279,6 +295,8 @@ internal sealed class ConsoleTextView : FrameworkElement
     private readonly List<(long Line, int Start, int Length)> _matches = new();
     private readonly Dictionary<long, List<int>> _matchesByLine = new();
     private int _matchIndex;
+    private string _searchQuery = ""; // 最近一次 RunSearch 的关键词（实时尾部换了内容时就地重找）
+    private const int MaxMatches = 5000;
 
     // MARK: 画刷
     private readonly Dictionary<Color, SolidColorBrush> _brushes = new();
@@ -289,7 +307,7 @@ internal sealed class ConsoleTextView : FrameworkElement
     public event Action? SearchChanged;
 
     /// <summary>调试统计（调试桥开着时写进无障碍名字，tree 能看到）。</summary>
-    public long LinesAppended, Batches;
+    public long LinesAppended, Batches, LiveUpdates;
     public double MaxAppendMs, TotalAppendMs, MaxRenderMs, TotalRenderMs;
     public long Renders;
 
@@ -320,7 +338,11 @@ internal sealed class ConsoleTextView : FrameworkElement
     public ScrollBar VerticalBar => _vbar;
     public ScrollBar HorizontalBar => _hbar;
 
+    /// <summary>已定型的行数（不含实时尾部）。</summary>
     public int LineCount => _lines.Count;
+
+    /// <summary>实时尾部的行数。</summary>
+    public int LiveCount => _live.Count;
 
     public bool Follow
     {
@@ -361,13 +383,13 @@ internal sealed class ConsoleTextView : FrameworkElement
 
     // MARK: 追加 / 清空
 
+    /// <summary>清空已定型的行和实时尾部（和 Mac 的 reset 一样；程序下次改写屏幕时内核会再推实时尾部）。</summary>
     public void Clear()
     {
         _firstNo += _lines.Count;
         _lines.Clear();
-        _rowStart.Clear();
-        _totalRows = 0;
-        _maxWidth = 0;
+        _live = new List<ConsoleLineData>();
+        RebuildRowStart();
         _offsetY = 0;
         _offsetX = 0;
         _selAnchor = _selActive = null;
@@ -378,39 +400,74 @@ internal sealed class ConsoleTextView : FrameworkElement
         InvalidateVisual();
     }
 
-    /// <summary>追加一批已解析的行（超过上限时一次删掉多出的行，再多删 10%）。</summary>
-    public void Append(IReadOnlyList<ConsoleLineData> batch)
+    /// <summary>
+    /// 追加一批已解析的行（超过上限时一次删掉多出的行，再多删 10%），再按需整体替换实时尾部：
+    /// live 为 null 时尾部不变，空列表清空尾部。实时行不计入行数上限；已定型行只追加，换尾部只重算末尾那几行。
+    /// </summary>
+    public void Append(IReadOnlyList<ConsoleLineData> batch, IReadOnlyList<ConsoleLineData>? live = null)
     {
-        if (batch.Count == 0) return;
+        if (batch.Count == 0 && live == null) return;
         var sw = Stopwatch.StartNew();
-        int start = batch.Count > _maxLines ? batch.Count - _maxLines : 0;
         EnsureLayout();
-        for (int i = start; i < batch.Count; i++)
+        long oldLiveStart = LiveStartNo;
+        bool hadLive = _live.Count > 0;
+        DetachLiveRows();
+        if (batch.Count > 0)
         {
-            var l = batch[i];
-            _rowStart.Add(_totalRows);
-            _lines.Add(l);
-            int rows = RowsOf(l);
-            _totalRows += rows;
-            if (l.Width > _maxWidth) _maxWidth = l.Width;
+            int start = batch.Count > _maxLines ? batch.Count - _maxLines : 0;
+            for (int i = start; i < batch.Count; i++)
+            {
+                var l = batch[i];
+                _rowStart.Add(_committedRows);
+                _lines.Add(l);
+                _committedRows += RowsOf(l);
+                if (l.Width > _committedMaxWidth) _committedMaxWidth = l.Width;
+            }
+            int alive = _lines.Count;
+            if (alive > _maxLines)
+            {
+                int drop = Math.Min(alive, alive - _maxLines + _maxLines / 10);
+                double droppedHeight = (_rowStart.Count > drop ? _rowStart[drop] : _committedRows) * _lineH;
+                _lines.RemoveRange(0, drop);
+                _firstNo += drop;
+                RebuildCommittedRows();
+                if (!_follow) _offsetY = Math.Max(0, _offsetY - droppedHeight); // 不跟随时保持看到的内容不动
+            }
         }
-        int alive = _lines.Count;
-        if (alive > _maxLines)
-        {
-            int drop = Math.Min(alive, alive - _maxLines + _maxLines / 10);
-            double droppedHeight = _rowStart.Count > drop ? _rowStart[drop] * _lineH : _totalRows * _lineH;
-            _lines.RemoveRange(0, drop);
-            _firstNo += drop;
-            RebuildRowStart();
-            if (!_follow) _offsetY = Math.Max(0, _offsetY - droppedHeight); // 不跟随时保持看到的内容不动
-        }
+        if (live != null) _live = new List<ConsoleLineData>(live);
+        AttachLiveRows();
+        // 实时行的行号随已定型行后移了、或者内容换了：旧的实时行匹配作废，就地重找（新的已定型行照旧等外层重新搜索）
+        if (hadLive || _live.Count > 0) RefreshLiveMatches(oldLiveStart);
         if (_follow) ScrollToEnd(); else { ClampOffsets(); UpdateBars(); }
         InvalidateVisual();
         sw.Stop();
         LinesAppended += batch.Count;
+        if (live != null) LiveUpdates++;
         Batches++;
         TotalAppendMs += sw.Elapsed.TotalMilliseconds;
         MaxAppendMs = Math.Max(MaxAppendMs, sw.Elapsed.TotalMilliseconds);
+    }
+
+    /// <summary>去掉 _rowStart 末尾属于实时行的部分，总行数、最大宽度退回只含已定型行（之后可以接着追加已定型行）。</summary>
+    private void DetachLiveRows()
+    {
+        int n = _lines.Count;
+        if (_rowStart.Count > n) _rowStart.RemoveRange(n, _rowStart.Count - n);
+        _totalRows = _committedRows;
+        _maxWidth = _committedMaxWidth;
+    }
+
+    /// <summary>把实时行接到 _rowStart 末尾（调用前 _rowStart 只有已定型行），算出含实时尾部的总行数与最大宽度。</summary>
+    private void AttachLiveRows()
+    {
+        _totalRows = _committedRows;
+        _maxWidth = _committedMaxWidth;
+        foreach (var l in _live)
+        {
+            _rowStart.Add(_totalRows);
+            _totalRows += RowsOf(l);
+            if (l.Width > _maxWidth) _maxWidth = l.Width;
+        }
     }
 
     private int RowsOf(ConsoleLineData l)
@@ -422,7 +479,8 @@ internal sealed class ConsoleTextView : FrameworkElement
         return l.Rows;
     }
 
-    private void RebuildRowStart()
+    /// <summary>重算已定型行的 _rowStart（不含实时行）。</summary>
+    private void RebuildCommittedRows()
     {
         _rowStart.Clear();
         int total = 0, maxW = 0;
@@ -432,8 +490,17 @@ internal sealed class ConsoleTextView : FrameworkElement
             total += RowsOf(l);
             if (l.Width > maxW) maxW = l.Width;
         }
+        _committedRows = total;
+        _committedMaxWidth = maxW;
         _totalRows = total;
         _maxWidth = maxW;
+    }
+
+    /// <summary>重算全部行（已定型行 + 实时尾部）的 _rowStart。</summary>
+    private void RebuildRowStart()
+    {
+        RebuildCommittedRows();
+        AttachLiveRows();
     }
 
     private int ColsFor(double width) => !_wrap || width <= 0 ? 0 : Math.Max(10, (int)Math.Floor((width - PadX * 2) / _cellW));
@@ -464,7 +531,7 @@ internal sealed class ConsoleTextView : FrameworkElement
     private long TopLine(out int rowInLine)
     {
         rowInLine = 0;
-        if (_lines.Count == 0 || _lineH <= 0) return -1;
+        if (ShownCount == 0 || _lineH <= 0) return -1;
         int row = (int)Math.Floor(Math.Max(0, _offsetY) / _lineH);
         int li = LineAtRow(row);
         rowInLine = row - _rowStart[li];
@@ -501,6 +568,7 @@ internal sealed class ConsoleTextView : FrameworkElement
         _lineH = Math.Ceiling(natural * dpi) / dpi;
         _baseline = Math.Round(((_lineH - natural) / 2 + face.Baseline * f.Size) * dpi) / dpi;
         foreach (var l in _lines) l.RowsFor = -1;
+        foreach (var l in _live) l.RowsFor = -1;
         return true;
     }
 
@@ -619,7 +687,7 @@ internal sealed class ConsoleTextView : FrameworkElement
         var sw = Stopwatch.StartNew();
         double w = ActualWidth, h = ActualHeight;
         dc.DrawRectangle(Theme.Brush(ColorToken.ConsoleBg), null, new Rect(0, 0, w, h));
-        if (_lines.Count == 0 || w <= 0 || h <= 0) return;
+        if (ShownCount == 0 || w <= 0 || h <= 0) return;
         if (EnsureLayout())
         {
             if (_follow) _offsetY = MaxOffsetY;
@@ -630,11 +698,12 @@ internal sealed class ConsoleTextView : FrameworkElement
         int li = LineAtRow(firstRow);
         double dpi = _metricsDpi;
         var selRange = SelectionRange();
-        for (; li < _lines.Count; li++)
+        int count = ShownCount; // 实时尾部接在已定型行后面一起画
+        for (; li < count; li++)
         {
             double top = PadY + _rowStart[li] * _lineH - _offsetY;
             if (top >= h) break;
-            RenderLine(dc, _lines[li], _firstNo + li, top, selRange, dpi);
+            RenderLine(dc, LineAt(li), _firstNo + li, top, selRange, dpi);
         }
         sw.Stop();
         Renders++;
@@ -671,7 +740,8 @@ internal sealed class ConsoleTextView : FrameworkElement
             foreach (var mi in ms)
             {
                 var m = _matches[mi];
-                FillCells(dc, m.Start, m.Length, top, x0, Theme.Brush(mi == _matchIndex ? ColorToken.SearchMatchCurrent : ColorToken.SearchMatch));
+                int ma = Math.Min(m.Start, n), mb = Math.Min(m.Start + m.Length, n); // 防御：匹配不超出这一行
+                if (mb > ma) FillCells(dc, ma, mb - ma, top, x0, Theme.Brush(mi == _matchIndex ? ColorToken.SearchMatchCurrent : ColorToken.SearchMatch));
             }
         }
         // 3) 选择
@@ -799,13 +869,14 @@ internal sealed class ConsoleTextView : FrameworkElement
     /// <summary>坐标 → (绝对行号, 光标下标)；charUnder 时返回压在下面的字（找链接用）。</summary>
     private (long Line, int Index)? HitTest(Point p, bool charUnder = false)
     {
-        if (_lines.Count == 0) return null;
+        int count = ShownCount;
+        if (count == 0) return null;
         double cy = p.Y + _offsetY - PadY;
         int row = (int)Math.Floor(cy / _lineH);
         if (row < 0) return (_firstNo, 0);
-        if (row >= _totalRows) return (_firstNo + _lines.Count - 1, _lines[_lines.Count - 1].Text.Length);
+        if (row >= _totalRows) return (_firstNo + count - 1, LineAt(count - 1).Text.Length);
         int li = LineAtRow(row);
-        var line = _lines[li];
+        var line = LineAt(li);
         int rowIn = row - _rowStart[li];
         var text = line.Text;
         int n = text.Length;
@@ -843,9 +914,9 @@ internal sealed class ConsoleTextView : FrameworkElement
     {
         if (SelectionRange() is not { } r) return null;
         var sb = new StringBuilder();
-        for (long no = Math.Max(r.A.Line, _firstNo); no <= r.B.Line && no - _firstNo < _lines.Count; no++)
+        for (long no = Math.Max(r.A.Line, _firstNo); no <= r.B.Line && no - _firstNo < ShownCount; no++)
         {
-            var t = _lines[(int)(no - _firstNo)].Text;
+            var t = LineAt((int)(no - _firstNo)).Text;
             int a = no == r.A.Line ? Math.Min(r.A.Index, t.Length) : 0;
             int b = no == r.B.Line ? Math.Min(r.B.Index, t.Length) : t.Length;
             if (no > Math.Max(r.A.Line, _firstNo)) sb.Append(Environment.NewLine);
@@ -854,17 +925,19 @@ internal sealed class ConsoleTextView : FrameworkElement
         return sb.ToString();
     }
 
+    /// <summary>全部文字（已定型行 + 实时尾部当前的内容）。</summary>
     public string AllText()
     {
         var sb = new StringBuilder();
         foreach (var l in _lines) sb.Append(l.Text).Append(Environment.NewLine);
+        foreach (var l in _live) sb.Append(l.Text).Append(Environment.NewLine);
         return sb.ToString();
     }
 
     private string? LinkAt(Point p)
     {
         if (HitTest(p, charUnder: true) is not { } h) return null;
-        var line = _lines[(int)(h.Line - _firstNo)];
+        var line = LineAt((int)(h.Line - _firstNo));
         if (line.Links == null) return null;
         foreach (var l in line.Links) if (h.Index >= l.Start && h.Index < l.Start + l.Length) return l.Url;
         return null;
@@ -935,7 +1008,7 @@ internal sealed class ConsoleTextView : FrameworkElement
 
     private void SelectWord((long Line, int Index) hit)
     {
-        var t = _lines[(int)(hit.Line - _firstNo)].Text;
+        var t = LineAt((int)(hit.Line - _firstNo)).Text;
         if (t.Length == 0) return;
         int i = Math.Min(hit.Index, t.Length - 1);
         bool Word(char c) => char.IsLetterOrDigit(c) || c == '_';
@@ -952,7 +1025,7 @@ internal sealed class ConsoleTextView : FrameworkElement
 
     private void SelectLine(long no)
     {
-        var t = _lines[(int)(no - _firstNo)].Text;
+        var t = LineAt((int)(no - _firstNo)).Text;
         _selAnchor = (no, 0);
         _selActive = (no, t.Length);
         InvalidateVisual();
@@ -960,9 +1033,10 @@ internal sealed class ConsoleTextView : FrameworkElement
 
     public void SelectAll()
     {
-        if (_lines.Count == 0) return;
+        int count = ShownCount;
+        if (count == 0) return;
         _selAnchor = (_firstNo, 0);
-        _selActive = (_firstNo + _lines.Count - 1, _lines[_lines.Count - 1].Text.Length);
+        _selActive = (_firstNo + count - 1, LineAt(count - 1).Text.Length);
         InvalidateVisual();
     }
 
@@ -995,33 +1069,58 @@ internal sealed class ConsoleTextView : FrameworkElement
     {
         _matches.Clear();
         _matchesByLine.Clear();
-        if (string.IsNullOrEmpty(query))
+        _searchQuery = query ?? "";
+        if (_searchQuery.Length == 0)
         {
             _matchIndex = 0;
             InvalidateVisual();
             SearchChanged?.Invoke();
             return;
         }
-        for (int li = 0; li < _lines.Count && _matches.Count < 5000; li++)
+        SearchLines(0, ShownCount, _searchQuery); // 已定型行和实时尾部一起找
+        if (!keepIndex || _matchIndex >= _matches.Count) _matchIndex = Math.Max(0, _matches.Count - 1);
+        if (!keepIndex) RevealMatch();
+        InvalidateVisual();
+        SearchChanged?.Invoke();
+    }
+
+    /// <summary>在下标 [from, to) 的行里找 query，匹配按行序接在 _matches 末尾（总数到 MaxMatches 为止）。</summary>
+    private void SearchLines(int from, int to, string query)
+    {
+        if (query.Length == 0) return;
+        for (int li = from; li < to && _matches.Count < MaxMatches; li++)
         {
-            var t = _lines[li].Text;
-            int from = 0;
-            while (from <= t.Length - query.Length)
+            var t = LineAt(li).Text;
+            int pos = 0;
+            while (pos <= t.Length - query.Length)
             {
-                int f = t.IndexOf(query, from, StringComparison.OrdinalIgnoreCase);
+                int f = t.IndexOf(query, pos, StringComparison.OrdinalIgnoreCase);
                 if (f < 0) break;
                 long no = _firstNo + li;
                 if (!_matchesByLine.TryGetValue(no, out var list)) _matchesByLine[no] = list = new List<int>();
                 list.Add(_matches.Count);
                 _matches.Add((no, f, query.Length));
-                from = f + Math.Max(query.Length, 1);
-                if (_matches.Count >= 5000) break;
+                pos = f + Math.Max(query.Length, 1);
+                if (_matches.Count >= MaxMatches) break;
             }
         }
-        if (!keepIndex || _matchIndex >= _matches.Count) _matchIndex = Math.Max(0, _matches.Count - 1);
-        if (!keepIndex) RevealMatch();
-        InvalidateVisual();
-        SearchChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// 实时尾部变了（内容换了，或者前面追加了已定型行、行号后移）：去掉旧实时行（行号 ≥ oldLiveStart）的匹配，
+    /// 在现在的实时行里按最近的关键词重找。匹配按行序排列，实时行总在最后，所以只动 _matches 的末尾。
+    /// </summary>
+    private void RefreshLiveMatches(long oldLiveStart)
+    {
+        if (_searchQuery.Length == 0) return;
+        int before = _matches.Count;
+        int cut = before;
+        while (cut > 0 && _matches[cut - 1].Line >= oldLiveStart) cut--;
+        for (int k = cut; k < before; k++) _matchesByLine.Remove(_matches[k].Line);
+        _matches.RemoveRange(cut, before - cut);
+        SearchLines(_lines.Count, ShownCount, _searchQuery);
+        if (_matchIndex >= _matches.Count) _matchIndex = Math.Max(0, _matches.Count - 1);
+        if (cut != before || _matches.Count != cut) SearchChanged?.Invoke();
     }
 
     /// <summary>跳到下一处 / 上一处。</summary>
@@ -1039,9 +1138,9 @@ internal sealed class ConsoleTextView : FrameworkElement
         if (_matchIndex < 0 || _matchIndex >= _matches.Count) return;
         var m = _matches[_matchIndex];
         int li = (int)(m.Line - _firstNo);
-        if (li < 0 || li >= _lines.Count) return;
+        if (li < 0 || li >= ShownCount) return;
         if (_follow) { _follow = false; FollowChanged?.Invoke(false); }
-        var line = _lines[li];
+        var line = LineAt(li);
         EnsureScratch(line.Text.Length);
         ConsoleLayout.Layout(line.Text, _wrap ? _cols : 0, _rowOf, _colOf, _widthOf);
         int idx = Math.Min(m.Start, Math.Max(0, line.Text.Length - 1));
@@ -1070,6 +1169,8 @@ internal sealed class ConsoleTextView : FrameworkElement
 /// <summary>
 /// 一个控制台的数据管道：取最近 2000 行 → 从 lastSeq 订阅流；后台线程每约 50ms 把新行合并成一批、解析 ANSI，
 /// 再一次性交给界面线程追加（界面线程只做追加和画可见行）。对应 Mac ConsoleController 的订阅部分。
+/// 流里的实时尾部（伪终端里还在原地改写的末尾几行）走同一条管道：一批里先追加全部已定型行，再换成这一批里最后给出的实时尾部，
+/// 和逐条应用的结果相同；控制台结束时清空实时尾部。
 /// </summary>
 internal sealed class ConsoleController
 {
@@ -1081,8 +1182,11 @@ internal sealed class ConsoleController
     private readonly object _pendingLock = new();
     private readonly object _parseLock = new();
     private List<LogLine> _pending = new();
+    private List<LogLine>? _pendingLive; // null：这一批里实时尾部不变
     private bool _pumpScheduled;
     private ANSIParser _parser = new();
+    // 实时行专用的解析器（只在 _parseLock 里用）：每行的样式自包含，逐行从默认样式开始解析，不碰已定型行那个有状态的解析器
+    private readonly ANSIParser _liveParser = new();
     private readonly int _maxLines = Math.Max(100, M.ConsoleMaxLines);
 
     public event Action? Ended;
@@ -1115,7 +1219,7 @@ internal sealed class ConsoleController
             // raw=true：内核默认去掉 ANSI（给 AI / 命令行看的），控制台要保留颜色
             var res = await api.CallAsync<LogsResult>("run.logs", Json.Object(("consoleId", id), ("tail", 2000), ("raw", true)));
             if (gen != _generation) return;
-            Enqueue(gen, res.Lines, immediate: true);
+            Enqueue(gen, res.Lines, null, immediate: true);
             since = res.LastSeq;
         }
         catch (Exception)
@@ -1134,9 +1238,11 @@ internal sealed class ConsoleController
             switch (u)
             {
                 case ConsoleStream.Update.Lines l:
-                    Enqueue(gen, l.Value, immediate: false);
+                    Enqueue(gen, l.Value, l.Live, immediate: false);
                     break;
                 case ConsoleStream.Update.Ended:
+                    // 结束时清空实时尾部：走同一条管道，排在已经收到的行和尾部后面
+                    Enqueue(gen, new List<LogLine>(), new List<LogLine>(), immediate: false);
                     _ui.BeginInvoke(new Action(() => { if (gen == _generation) Ended?.Invoke(); }));
                     break;
             }
@@ -1150,18 +1256,27 @@ internal sealed class ConsoleController
         _stream?.Stop();
         _stream = null;
         _consoleId = null;
-        lock (_pendingLock) _pending = new List<LogLine>();
+        lock (_pendingLock)
+        {
+            _pending = new List<LogLine>();
+            _pendingLive = null;
+            // 已排上的旧一代 Pump 见到代数不对会直接返回，不会取走新一代的待处理行；新一代重新排自己的 Pump
+            _pumpScheduled = false;
+        }
     }
 
-    /// <summary>后台线程收到新行：放进待处理，约 50ms 后合并成一批处理。</summary>
-    private void Enqueue(int gen, List<LogLine> lines, bool immediate)
+    /// <summary>
+    /// 后台线程收到一条更新：已定型行放进待处理，live 非 null 时替换待处理的实时尾部；约 50ms 后合并成一批处理。
+    /// </summary>
+    private void Enqueue(int gen, List<LogLine> lines, List<LogLine>? live, bool immediate)
     {
-        if (lines.Count == 0) return;
+        if (lines.Count == 0 && live == null) return;
         bool schedule;
         lock (_pendingLock)
         {
             if (gen != Volatile.Read(ref _generation)) return;
             _pending.AddRange(lines);
+            if (live != null) _pendingLive = live;
             // 积压过多时只留最后会显示的部分（完整日志在磁盘）
             if (_pending.Count > _maxLines * 4) _pending.RemoveRange(0, _pending.Count - _maxLines * 2);
             schedule = !_pumpScheduled;
@@ -1177,27 +1292,43 @@ internal sealed class ConsoleController
         lock (_parseLock)
         {
             List<LogLine> batch;
+            List<LogLine>? live;
             lock (_pendingLock)
             {
+                if (gen != Volatile.Read(ref _generation)) return;
                 batch = _pending;
+                live = _pendingLive;
                 _pending = new List<LogLine>();
+                _pendingLive = null;
                 _pumpScheduled = false;
             }
-            if (gen != Volatile.Read(ref _generation) || batch.Count == 0) return;
+            if (batch.Count == 0 && live == null) return;
             // 只解析会留下来的最后 maxLines 行
             int start = batch.Count > _maxLines ? batch.Count - _maxLines : 0;
             var parsed = new List<ConsoleLineData>(batch.Count - start);
             for (int i = start; i < batch.Count; i++) parsed.Add(ConsoleLineData.From(batch[i], _parser));
+            List<ConsoleLineData>? liveParsed = null;
+            if (live != null)
+            {
+                liveParsed = new List<ConsoleLineData>(live.Count);
+                foreach (var l in live)
+                {
+                    _liveParser.Reset();
+                    liveParsed.Add(ConsoleLineData.From(l, _liveParser));
+                }
+            }
+            bool committed = parsed.Count > 0;
             _ui.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
             {
                 if (gen != _generation) return;
-                _view.Append(parsed);
-                BatchAppended?.Invoke();
+                _view.Append(parsed, liveParsed);
+                BatchAppended?.Invoke(committed);
             }));
         }
     }
 
-    public event Action? BatchAppended;
+    /// <summary>界面线程应用了一批。参数：这一批有没有新的已定型行（只换了实时尾部时为 false）。</summary>
+    public event Action<bool>? BatchAppended;
 }
 
 #endregion
@@ -1248,7 +1379,8 @@ public sealed class ConsolePanel : PPView
         _text = new ConsoleTextView().Id("console.text");
         _text.Wrap = UiPrefs.Get("ConsoleWrap") != "0";
         _controller = new ConsoleController(_text);
-        _controller.BatchAppended += () => { if (_query.Length > 0) ScheduleSearch(); UpdateStats(); };
+        // 只换了实时尾部时文本区已就地重找过尾部的匹配；不重新排全文搜索（尾部每秒最多刷新 10 次，会一直推迟防抖）
+        _controller.BatchAppended += committed => { if (committed && _query.Length > 0) ScheduleSearch(); UpdateStats(); };
         _text.FollowChanged += on => { if (_followButton != null) _followButton.Active = on; };
         _text.SearchChanged += UpdateMatchText;
         _surface = new Grid();
@@ -1402,9 +1534,9 @@ public sealed class ConsolePanel : PPView
     {
         if (!DebugBridge.IsEnabled) return;
         _text.A11y(string.Format(CultureInfo.InvariantCulture,
-            "lines={0} appended={1} batches={2} appendAvgMs={3:F2} appendMaxMs={4:F2} renders={5} renderAvgMs={6:F2} renderMaxMs={7:F2}",
+            "lines={0} appended={1} batches={2} appendAvgMs={3:F2} appendMaxMs={4:F2} renders={5} renderAvgMs={6:F2} renderMaxMs={7:F2} live={8} liveUpdates={9}",
             _text.LineCount, _text.LinesAppended, _text.Batches, _text.Batches == 0 ? 0 : _text.TotalAppendMs / _text.Batches, _text.MaxAppendMs,
-            _text.Renders, _text.Renders == 0 ? 0 : _text.TotalRenderMs / _text.Renders, _text.MaxRenderMs));
+            _text.Renders, _text.Renders == 0 ? 0 : _text.TotalRenderMs / _text.Renders, _text.MaxRenderMs, _text.LiveCount, _text.LiveUpdates));
     }
 
     private void SendInput()

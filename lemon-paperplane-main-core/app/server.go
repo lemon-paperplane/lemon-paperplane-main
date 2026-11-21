@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/i18n"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/paths"
 	"github.com/lemon-paperplane/lemon-paperplane-main/lemon-paperplane-main-core/internal/remote"
 )
@@ -32,6 +33,7 @@ func runServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	listen := fs.String("listen", "", "remote listen address (default from remote/config.json, else 0.0.0.0:47290)")
 	dataDir := fs.String("data-dir", "", "data directory (default ~/.config/lemon-paperplane on Linux)")
+	detach := fs.Bool("detach", false, "run in background")
 	_ = fs.Parse(args)
 	if *dataDir != "" {
 		abs, err := filepath.Abs(*dataDir)
@@ -40,7 +42,11 @@ func runServe(args []string) error {
 		}
 		_ = os.Setenv("PAPERPLANE_DATA_DIR", abs)
 	}
-	return runDaemonOpts(nil, daemonOpts{serve: true, listen: *listen})
+	var dargs []string
+	if *detach {
+		dargs = []string{"--detach"}
+	}
+	return runDaemonOpts(dargs, daemonOpts{serve: true, listen: *listen})
 }
 
 func printServeBanner(st remote.Status) {
@@ -208,36 +214,7 @@ func (s *serverClient) keyCmd(args []string) error {
 		if name == "" {
 			return errors.New("usage: paperplane server key add <device-name> [--address host[:port]]")
 		}
-		var ck *remote.CreatedKey
-		if s.c != nil {
-			ck = &remote.CreatedKey{}
-			if err := s.c.call("remote.keyCreate", map[string]string{"name": name, "address": *addr}, ck); err != nil {
-				return err
-			}
-		} else {
-			var err error
-			if ck, err = s.rm.CreateKey(name, *addr, cliWho); err != nil {
-				return err
-			}
-		}
-		st, _ := s.status()
-		fmt.Printf("Access key %s created for %q.\n\n", ck.Key.ID, ck.Key.Name)
-		fmt.Println("Connection code (paste it into Add Server on the other device, or scan the QR code with the phone app;")
-		fmt.Println("shown only once, treat it like a password):")
-		fmt.Println()
-		fmt.Println(ck.Code)
-		fmt.Println()
-		if term.IsTerminal(int(os.Stdout.Fd())) {
-			if q, err := remote.QRTerminal(ck.Code); err == nil {
-				fmt.Print(q)
-				fmt.Println()
-			}
-		}
-		fmt.Println("Certificate fingerprint:", st.FingerprintDisplay)
-		if !st.Enabled {
-			fmt.Println("\nRemote access is off. Turn it on with: paperplane server enable   (or run: paperplane serve)")
-		}
-		return nil
+		return s.createKey(name, *addr, true)
 	case "revoke", "rm", "remove":
 		if len(args) < 2 {
 			return errors.New("usage: paperplane server key revoke <id>")
@@ -253,6 +230,41 @@ func (s *serverClient) keyCmd(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown: paperplane server key %s", args[0])
+}
+
+// createKey 生成访问密钥并打印连接码（终端里同时画二维码）。offHint：远程访问没开时提示开启的命令（菜单里会直接问，不用提示）。
+func (s *serverClient) createKey(name, addr string, offHint bool) error {
+	var ck *remote.CreatedKey
+	if s.c != nil {
+		ck = &remote.CreatedKey{}
+		if err := s.c.call("remote.keyCreate", map[string]string{"name": name, "address": addr}, ck); err != nil {
+			return err
+		}
+	} else {
+		var err error
+		if ck, err = s.rm.CreateKey(name, addr, cliWho); err != nil {
+			return err
+		}
+	}
+	st, _ := s.status()
+	fmt.Println()
+	fmt.Println(i18n.T("cli.key.created", ck.Key.Name, ck.Key.ID))
+	fmt.Println(i18n.T("cli.key.codeIntro"))
+	fmt.Println()
+	fmt.Println(ck.Code)
+	fmt.Println()
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		if q, err := remote.QRTerminal(ck.Code); err == nil {
+			fmt.Print(q)
+			fmt.Println()
+		}
+	}
+	fmt.Println(i18n.T("cli.key.fingerprint", st.FingerprintDisplay))
+	if !st.Enabled && offHint {
+		fmt.Println()
+		fmt.Println(i18n.T("cli.key.remoteOff"))
+	}
+	return nil
 }
 
 func (s *serverClient) userCmd(args []string) error {
