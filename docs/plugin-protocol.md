@@ -214,7 +214,7 @@ go build -o /tmp/pp-probe ./cmd/paperplane-plugin-probe
 
 ## 补充：任何模块都能建的运行配置、代码字段、实时下拉选项（2026-11）
 
-- `runConfigurationTypes[].anyModule: true`：此类配置在任何模块（包括没识别出技术的工程根目录）都能新建，插件不必参与识别分析，也不必声明 activation，平时不会被拉起（如内置的 `shell` 插件：「脚本 / 可执行文件」与「自定义命令」）。运行这类配置时，配置所属插件的声明式规则（diagnostics / urlPatterns / readyPatterns）照样生效。
+- `runConfigurationTypes[].anyModule: true`：此类配置在任何模块（包括没识别出技术的工程根目录）都能新建，插件不必参与识别分析，也不必声明 activation，平时不会被拉起（如内置的 `shell` 插件：「脚本 / 可执行文件」与「自定义命令」）。运行这类配置时，配置所属插件的声明式规则（diagnostics / urlPatterns / readyPatterns）照样生效。这类配置跟模块的技术栈无关（如一行 `git pull`），运行前内核不做模块准备：不同步、不自动装依赖，缺工具链也不下载、不报错；模块已选好的工具链照样加进 PATH。
 - 表单字段 `type: "code"` + `language`（如 `shell`）：界面用 CodeMirror 输入框（编辑器工程的 `snippet.html`），带着色、行号、撤销，⌘↩ 提交。
 - 表单字段 `live: true`（配合 `optionsFrom`）：选项随时会变（如已连接设备）。界面打开表单时及打开期间定期调用插件的 `options/list`（`OptionsParams{project, module, keys, env}` → `{values: {key: [Option]}}`），分析时的 `optionValues` 只作初始值。内核只调用声明了这些键的插件。
 - 重新识别时，没被识别出来、但用户在里面建过运行配置（`source: "user"`）的目录会保留为普通模块，只保留用户配置。

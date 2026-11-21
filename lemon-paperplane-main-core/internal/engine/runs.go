@@ -209,7 +209,15 @@ func (e *Engine) setRun(rs *runState, fn func(r *model.Run)) {
 
 func (e *Engine) failRun(rs *runState, err error) {
 	msg := errString(err)
-	rs.console.System(i18n.T("run.prepareFailed", msg))
+	rs.mu.Lock()
+	byUser := rs.r.StoppedByUser
+	rs.mu.Unlock()
+	if byUser {
+		// 准备阶段（装工具链、装依赖）被用户停掉：不是启动失败
+		rs.console.System(i18n.T("run.stopped"))
+	} else {
+		rs.console.System(i18n.T("run.prepareFailed", msg))
+	}
 	now := time.Now()
 	e.setRun(rs, func(r *model.Run) {
 		if r.StoppedByUser {
@@ -223,6 +231,16 @@ func (e *Engine) failRun(rs *runState, err error) {
 	e.recordLastRun(rs.snapshot())
 	rs.console.Close()
 	close(rs.exited)
+}
+
+// anyModuleType：插件把这个运行配置类型声明成 anyModule（shell 插件的命令、脚本）。
+func anyModuleType(plug *plugins.Plugin, typ string) bool {
+	for _, t := range plug.Manifest.Contributes.RunConfigurationTypes {
+		if t.ID == typ {
+			return t.AnyModule
+		}
+	}
+	return false
 }
 
 // recordLastRun 把结束的运行记到工程上（随工程保存，卡片上显示「上次运行」）。
@@ -255,15 +273,21 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 		e.failRun(rs, Errf("err.noRunConfig"))
 		return
 	}
+	// 命令、脚本这类「任何模块都能建」的配置跟模块的技术栈无关（如 git pull）：不同步、不装依赖，
+	// 缺工具链也不下载、不报错；已选好的工具链照样加进 PATH，命令里的 node、java 用的是工程那一版
+	standalone := anyModuleType(plug, cfg.Type)
 	// 1. 工具链
-	tcs, err := e.ensureToolchains(ctx, p, m, r.ID)
-	if err != nil {
+	var tcs map[string]sdk.Toolchain
+	var err error
+	if standalone {
+		tcs = e.moduleToolchains(m)
+	} else if tcs, err = e.ensureToolchains(ctx, p, m, r.ID); err != nil {
 		e.failRun(rs, err)
 		e.diagnoseRunFailure(rs, p, m, cfg)
 		return
 	}
 	// 2. 同步（首次运行前）
-	if m.NeedsSync && !m.Synced {
+	if !standalone && m.NeedsSync && !m.Synced {
 		rs.console.System(i18n.T("run.syncing"))
 		if err := e.syncModules(ctx, p.ID, m.ID, r.ID); err != nil {
 			e.failRun(rs, err)
@@ -281,7 +305,7 @@ func (e *Engine) runLifecycle(ctx context.Context, rs *runState, plug *plugins.P
 		}
 	}
 	// 3. 依赖
-	if m.Dependencies != nil && m.Dependencies.State == "missing" && e.Store.Settings().AutoInstallDependencies {
+	if !standalone && m.Dependencies != nil && m.Dependencies.State == "missing" && e.Store.Settings().AutoInstallDependencies {
 		rs.console.System(i18n.T("run.installingDeps"))
 		if err := e.installDeps(ctx, p, m, r.ID, false); err != nil {
 			e.failRun(rs, err)

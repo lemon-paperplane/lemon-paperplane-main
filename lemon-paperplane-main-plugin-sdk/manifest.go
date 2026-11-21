@@ -156,6 +156,8 @@ type RunConfigTypeDef struct {
 	Options []FormField `json:"options,omitempty"`
 	// AnyModule：任何模块（包括没识别出技术的工程根目录）都能新建此类配置，不要求插件参与该模块的识别分析
 	// （如「脚本与可执行文件」）。这样的插件可以不声明 activation，平时不会因为分析而被拉起。
+	// 这类配置跟模块的技术栈无关，运行前内核不做模块准备：不同步、不自动装依赖，缺工具链也不下载、不报错；
+	// 模块已选好的工具链照样加进 PATH。
 	AnyModule bool `json:"anyModule,omitempty"`
 }
 
